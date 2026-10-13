@@ -49,6 +49,7 @@
   .dot{width:10px; height:10px; border-radius:50%; background:var(--neon); box-shadow:0 0 10px var(--neon)}
   .netsel select{background:transparent; color:var(--ink); border:0; font:inherit; font-size:14px; max-width:130px}
   #wallet{display:flex; align-items:center; gap:8px; border:0; border-radius:12px; padding:10px 16px; font-weight:700; background:linear-gradient(90deg,#6BFF9C,#35EC7C); color:#04140B; white-space:nowrap}
+  #acct{border:1px solid var(--line2); background:var(--panel); color:var(--ink); border-radius:12px; padding:10px 14px; font-weight:700; white-space:nowrap; max-width:140px; overflow:hidden; text-overflow:ellipsis}
   #wallet.on{background:var(--panel2); color:var(--neon); border:1px solid var(--line)}
 
   /* ---------- sidebar ---------- */
@@ -161,6 +162,7 @@
   .sheet .close{width:100%; margin-top:18px; padding:12px; border-radius:10px; border:1.5px solid var(--neon); background:var(--neon); color:#04140B; font-weight:800}
   @media (prefers-reduced-motion:reduce){ *{animation:none!important; transition:none!important} }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -189,6 +191,7 @@
     </div>
     <div class="topr">
       <label class="netsel"><span class="dot"></span><select id="chainSel" aria-label="Network"></select></label>
+      <button id="acct"></button>
       <button id="wallet"><svg class="i"><use href="#i-wallet"/></svg><span id="walletTxt"></span></button>
     </div>
   </header>
@@ -334,7 +337,32 @@ const MODEL = "claude-sonnet-4-6";
 const FEE_BPS = 50;
 const JUP_BASE = "https://api.jup.ag/swap/v2";
 const JUP_DEC = { SOL:9, WSOL:9, USDC:6, USDT:6 };
-const ls = k => { try{ return localStorage.getItem(k); }catch(_){ return null; } };
+/* ============ Supabase (replaces localStorage) ============ */
+// Secrets (Anthropic / Jupiter keys, referral, live flag) live in Supabase Edge Function secrets, never in the browser.
+const SUPABASE_URL = "https://klfafovhuicekqyonfii.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtsZmFmb3ZodWljZWtxeW9uZmlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4ODUzMzksImV4cCI6MjEwNzQ2MTMzOX0.SrGcwXjW05yb9CTAO-qHi1bBcs9--6axw23tUGYPy9w"; // public anon key, safe in the browser
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const authReady = (async () => {
+  try{ const { data } = await sb.auth.getSession(); if (!data.session) await sb.auth.signInAnonymously(); }catch(_){}
+})();
+let authUser = null;
+const isGuest = () => !authUser || authUser.is_anonymous;
+sb.auth.onAuthStateChange((ev, session) => {
+  authUser = session ? session.user : null;
+  updateAcct();
+  if (ev === "SIGNED_IN" || ev === "USER_UPDATED") setTimeout(loadHistory, 0);
+  if (ev === "SIGNED_OUT"){ history.length = 0; renderRecent(); }
+});
+const cfg = { jup:false, live:false };
+const jup = async (action, payload) => {
+  await authReady;
+  const { data, error } = await sb.functions.invoke("jupiter", { body:{ action, ...payload } });
+  if (error) throw error;
+  return data;
+};
+const cfgReady = authReady.then(async () => {
+  try{ const d = await jup("status"); cfg.jup = !!d.jup; cfg.live = !!d.live; }catch(_){}
+});
 
 /* ============ i18n: English source strings ============ */
 const EN = {
@@ -366,12 +394,11 @@ const EN = {
   why3H: "You confirm", why3: "Nothing moves without you.",
   why4H: "Multi-chain", why4: "Ethereum, Base, BNB, Solana, Robinhood.",
   connect: "Connect wallet",
-  demo: "Demo mode",
   placeholder: "Try: swap 50 USDC to ETH",
   send: "Send",
   welcome: "Hi! Tell me what you'd like to swap, e.g. “swap 50 USDC to ETH”. Nothing is sent without your confirmation. For a token that isn't on the list, paste its contract address.",
-  noWallet: "No wallet found in this browser. Open this page in a browser with MetaMask, or in a wallet app's browser. You're in demo mode for now.",
-  noPhantom: "No Solana wallet found. Install Phantom or open this page in a Solana wallet browser. You're in demo mode for now.",
+  noWallet: "No wallet found in this browser. Open this page in MetaMask or another wallet app's browser to connect.",
+  noPhantom: "No Solana wallet found. Install Phantom or open this page in the Phantom app's browser to connect.",
   wrongChain: "Your wallet is connected but not on {chain}. Switch networks in your wallet before swapping.",
   connected: "Connected. Network: {chain}. What would you like to swap?",
   connectFail: "Couldn't connect wallet: {msg}",
@@ -399,7 +426,9 @@ const EN = {
   execWarn: "REAL MONEY. You will be asked to sign in your wallet. Blockchain swaps cannot be undone.",
   execMax: "Live swaps are limited to ${cap} for now.",
   execNeed: "Real swap needs: Phantom connected, a Jupiter API key, and live mode on (see the setup steps).",
-  execStale: "The price moved more than 1% since the preview. Nothing was sent. Run the preview again.",
+  execStale: "The price moved too much since the preview. Nothing was sent. Run the preview again.",
+  riskPump: "This looks like a pump.fun token. New meme coins like this often lose all their value or turn out to be rug pulls.",
+  pumpNoRoute: "This pump.fun token can't be swapped here yet (it may still be on the pump.fun bonding curve). You can trade it on pump.fun: {url}",
   execFee: "Unexpected fee from the quote. Nothing was sent.",
   execSigning: "Approve the request in your wallet…",
   execSending: "Sending the swap…",
@@ -409,8 +438,12 @@ const EN = {
   confirm: "Confirm",
   cancelled: "Swap cancelled.",
   connectFirst: "Connect your wallet first.",
+  openInPhantom: "Open this page in Phantom →",
+  openInMetaMask: "Open this page in MetaMask →",
   previewReady: "Preview ready. In Step 2, your wallet's signature request will appear here. No transaction was sent.",
   askSwap: "What would you like to swap?",
+  askAmount: "How much {from} do you want to swap to {to}? For example: swap 50 {from} to {to}",
+  llmDown: "Could not read that message right now. Try a simple command like: swap 50 USDC to ETH",
   error: "Something went wrong: {msg}. Please try again.",
   checking: "Checking token data…",
   tokenNotFound: "I couldn't verify this token with GeckoTerminal, so I won't prepare a swap for it.",
@@ -448,29 +481,59 @@ const EN = {
   scanNone: "Unavailable",
   riskAck: "I understand the risks and want to continue.",
   close: "Close",
+  login: "Log in", logout: "Log out", loginTitle: "Account", email: "Email", password: "Password",
+  signIn: "Sign in", signUp: "Sign up", signedAs: "Signed in as {email}",
+  authErr: "Login failed: {msg}", authCheck: "Account created. If email confirmation is on, check your inbox, then sign in.",
   aboutTitle: "About Swaply",
   aboutWhatH: "What it is",
-  aboutWhat: "Swaply is a chat assistant for swapping crypto tokens on Ethereum, Base, BNB Chain, Solana, and Robinhood Chain. You say what you want in your own words, in any language, and Swaply prepares a clear preview that you check and confirm yourself.",
+  aboutWhat: "Swaply is a chat for swapping crypto tokens on Ethereum, Base, BNB Chain, Solana, and Robinhood Chain. You say what you want in your own words, in any language, and Swaply prepares a clear preview that you check and confirm yourself.",
   aboutWhyH: "Why it exists",
   aboutWhy: "Swapping crypto usually means juggling token lists, slippage settings, and contract addresses, which is confusing for newcomers and easy to get wrong. Swaply replaces that with plain conversation, while keeping you in full control of your money. It is built for beginners, for people who prefer their own language, and for anyone who wants a double-check before signing.",
   aboutHowH: "How it works",
-  aboutHow1: "You pick a network and fill in the swap, or type a request, for example “swap 50 USDC to ETH”.",
-  aboutHow2: "The AI reads a typed message and extracts only the network, token pair, and amount. It never touches your funds.",
-  aboutHow3: "Regular code (not the AI) checks the request: supported tokens, valid amount, and a safety cap.",
+  aboutHow1: "You type a request in the chat, for example “swap 50 USDC to ETH”, in any language.",
+  aboutHow2: "Swaply reads your typed message and extracts only the network, token pair, and amount. It never touches your funds.",
+  aboutHow3: "Swaply's own code checks the request: supported tokens, valid amount, and a safety cap.",
   aboutHow4: "Swaply shows a preview with the rate, fee, slippage, network, recipient, and token contract addresses.",
   aboutHow5: "You confirm in your own wallet. Nothing happens without your signature.",
   aboutSafeH: "Safety principles",
   aboutSafe1: "Swaply never holds or sees your private keys.",
-  aboutSafe2: "The AI only interprets what you mean. It cannot send transactions.",
+  aboutSafe2: "Swaply only interprets what you mean. It cannot send a transaction without your wallet signature.",
   aboutSafe3: "Well-known tokens are on an allowlist. Other tokens can be added by contract address, but only after liquidity and security checks, with warnings, and with a much lower limit per swap. Tokens with very thin liquidity, honeypot flags, or extreme taxes are blocked.",
   aboutSafe4: "You always see the exact amounts and contract addresses before you sign.",
+  aboutUseH: "How to use it",
+  aboutUse1: "Simple swap: “swap 100 USDC to ETH”.",
+  aboutUse2: "Buy with a token: “buy ETH with 50 USDC”.",
+  aboutUse3: "Pick a network: “swap 0.1 SOL to USDC on solana”.",
+  aboutUse4: "Custom token on Solana: “swap 0.1 SOL to” followed by the contract address. The address is handled directly by Swaply's code.",
+  aboutUse5: "pump.fun tokens: paste the token address. Only tokens that already trade in an exchange pool can be swapped here. Live swaps of custom tokens are limited to $5. Tokens still on the bonding curve are not supported yet.",
+  aboutLiveH: "Real swaps (Solana only)",
+  aboutLive: "Real swaps work only on Solana, for SOL, WSOL, USDC and USDT, through Jupiter. They need your own Jupiter API key, a referral account, live mode turned on, and Phantom connected. Keys are stored as Supabase secrets, never in the browser. Run these commands once:",
+  aboutFeeH: "Fee",
+  aboutFee: "Swaply adds a 0.5% fee on Solana swaps. Jupiter keeps 20% of that fee, so about 0.4% is the owner's.",
+  aboutGuardH: "Limits and guards",
+  aboutGuard1: "Live swaps are capped at $25 each while testing, and $5 for custom or pump.fun tokens. Custom token previews are capped at $50.",
+  aboutGuard2: "Nothing is signed if the executable price is more than 1% worse than the preview (3% for custom tokens), or if the fee is higher than expected.",
+  aboutGuard3: "Live mode is off by default, and a real wallet must be connected before any swap.",
   aboutStatusH: "Current status",
-  aboutStatus: "This is Step 1 of development. Prices are indicative values from GeckoTerminal (sample values if it can't be reached), and signing is not enabled yet. Each swap stays on one network; cross-chain swaps are not supported. Next steps are executable quotes from swap routers, testing on testnets, and then wallet signing. Security scans come from GoPlus where supported and are not available for every token or network.",
-  aboutDisclaimer: "Swaply is not financial advice. Crypto can lose value and mistakes on-chain are usually irreversible. Verify token addresses and start with small amounts."
+  aboutStatus: "Prices are indicative values from GeckoTerminal (sample values if it can't be reached). Executable quotes and signing exist only for Solana through Jupiter. Other networks are preview only. Each swap stays on one network; cross-chain swaps are not supported. Do not publish this version: API keys in the browser can be read by anyone with access to the page, so use your own backend first. This has been mock tested, not yet tested with a real wallet.",
+  aboutDisclaimer: "Swaply is not financial advice. Crypto can lose value and mistakes on-chain are usually irreversible. Verify token addresses and start with small amounts.",
+  aboutNetH: "Networks",
+  aboutNet: "Solana: SOL, WSOL, USDC, USDT, with real swaps through Jupiter. Base: ETH, WETH, USDC, DAI. Ethereum: ETH, WETH, USDC, USDT, DAI. BNB Chain: BNB, WBNB, USDT, USDC. Robinhood Chain: native ETH. Everything except Solana is preview only.",
+  aboutWalletH: "Wallet",
+  aboutWallet: "Swaply connects to the wallet in your browser (MetaMask for EVM, Phantom for Solana). On a phone browser, use the link to open this page inside your wallet app. There is no demo mode.",
+  aboutLogH: "What changed",
+  aboutLog1: "Fixed the chat: clear error messages and better parsing of commands.",
+  aboutLog2: "Added the Jupiter fee (0.5%) and real swaps on Solana with safety limits.",
+  aboutLog3: "Chat-only interface: the Swap form was removed.",
+  aboutLog4: "The chat now talks to a server function (/api/chat).",
+  aboutLog5: "Added links to open the page in Phantom or MetaMask.",
+  aboutLog6: "Removed the demo wallet.",
+  aboutLog7: "Added pump.fun tokens on Solana (graduated tokens through Jupiter, with a $5 cap)."
 };
 const cache = { english: EN };
 let langName = "English";
 let S = EN;
+
 const t = (k, v = {}) => (S[k] || EN[k] || k).replace(/\{(\w+)\}/g, (_, n) => v[n] ?? "");
 
 /* ============ State + helpers ============ */
@@ -480,7 +543,6 @@ const fromSel = $("fromSel"), toSel = $("toSel"), fromAddr = $("fromAddr"), toAd
 const amt = $("amt"), recv = $("recv"), slot = $("slot"), formMsg = $("formMsg"), previewBtn = $("previewBtn");
 let chain = "base";
 const accounts = { evm:null, solana:null };
-const demo = { evm:false, solana:false };
 const history = [];
 const wtype = () => CHAINS[chain].type === "solana" ? "solana" : "evm";
 const CUSTOM = "__custom";
@@ -516,7 +578,7 @@ function timeAgo(ts){
 function updateWallet(){
   const acct = accounts[wtype()];
   walletBtn.classList.toggle("on", !!acct);
-  $("walletTxt").textContent = !acct ? t("connect") : demo[wtype()] ? t("demo") : short(acct);
+  $("walletTxt").textContent = !acct ? t("connect") : short(acct);
 }
 function renderChains(){
   const sel = $("chainSel");
@@ -616,6 +678,16 @@ function pushHistory(res){
   history.unshift({ from:res.from.symbol, to:res.to.symbol, amount:res.amount, ch:res.ch, ts:Date.now() });
   if (history.length > 20) history.pop();
   renderRecent();
+  authReady.then(() => sb.from("swap_history").insert({ from_sym:res.from.symbol, to_sym:res.to.symbol, amount:res.amount, ch:res.ch })).catch(() => {});
+}
+async function loadHistory(){
+  try{
+    await authReady;
+    const { data } = await sb.from("swap_history").select("from_sym,to_sym,amount,ch,created_at").order("created_at", { ascending:false }).limit(20);
+    if (!data) return;
+    history.splice(0, history.length, ...data.filter(r => CHAINS[r.ch]).map(r => ({ from:r.from_sym, to:r.to_sym, amount:Number(r.amount), ch:r.ch, ts:Date.parse(r.created_at) })));
+    renderRecent();
+  }catch(_){}
 }
 function histRow(h){
   const li = document.createElement("li");
@@ -646,7 +718,9 @@ function renderSheet(){
     keys.forEach(k => { const li = document.createElement("li"); li.textContent = t(k); l.appendChild(li); });
     el.appendChild(l);
   };
-  if (sheetKind === "history"){
+  if (sheetKind === "login"){
+    loginPanel(el);
+  } else if (sheetKind === "history"){
     h("h2", "historyTitle");
     const ul = document.createElement("ul"); ul.className = "list"; el.appendChild(ul);
     renderList(ul, history);
@@ -655,16 +729,64 @@ function renderSheet(){
     h("h3","aboutWhatH"); h("p","aboutWhat");
     h("h3","aboutWhyH"); h("p","aboutWhy");
     h("h3","aboutHowH"); list("ol",["aboutHow1","aboutHow2","aboutHow3","aboutHow4","aboutHow5"]);
+    h("h3","aboutUseH"); list("ul",["aboutUse1","aboutUse2","aboutUse3","aboutUse4","aboutUse5"]);
+    h("h3","aboutNetH"); h("p","aboutNet");
+    h("h3","aboutWalletH"); h("p","aboutWallet");
+    h("h3","aboutLiveH"); h("p","aboutLive");
+    const pre = document.createElement("pre");
+    pre.style.cssText = "white-space:pre-wrap;word-break:break-all;background:#08140F;border:1px solid var(--line2);border-radius:10px;padding:10px;font-size:12px;color:var(--neon)";
+    pre.textContent = 'supabase secrets set ANTHROPIC_API_KEY=YOUR_KEY\nsupabase secrets set JUPITER_API_KEY=YOUR_JUPITER_KEY JUPITER_REF=YOUR_REFERRAL_ACCOUNT\nsupabase secrets set SWAPLY_LIVE=1';
+    el.appendChild(pre);
+    h("h3","aboutFeeH"); h("p","aboutFee");
+    h("h3","aboutGuardH"); list("ul",["aboutGuard1","aboutGuard2","aboutGuard3"]);
     h("h3","aboutSafeH"); list("ul",["aboutSafe1","aboutSafe2","aboutSafe3","aboutSafe4"]);
-    h("h3","aboutStatusH"); h("p","aboutStatus"); h("p","aboutDisclaimer");
+    h("h3","aboutStatusH"); h("p","aboutStatus");
+    h("h3","aboutLogH"); list("ul",["aboutLog1","aboutLog2","aboutLog3","aboutLog4","aboutLog5","aboutLog6","aboutLog7"]);
+    h("p","aboutDisclaimer");
   }
+}
+function updateAcct(){
+  const b = $("acct"); if (!b) return;
+  b.textContent = isGuest() ? t("login") : authUser.email.split("@")[0];
+}
+function loginPanel(el){
+  const h = (tag, txt) => { const n = document.createElement(tag); n.textContent = txt; el.appendChild(n); return n; };
+  h("h2", t("loginTitle"));
+  if (!isGuest()){
+    h("p", t("signedAs", { email: authUser.email }));
+    const out = h("button", t("logout")); out.className = "cta";
+    out.onclick = async () => { await sb.auth.signOut(); await sb.auth.signInAnonymously().catch(() => {}); closeSheet(); };
+    return;
+  }
+  const field = (type, ph, ac) => { const i = document.createElement("input"); i.type = type; i.className = "in"; i.placeholder = ph; i.autocomplete = ac; i.style.marginTop = "10px"; el.appendChild(i); return i; };
+  const em = field("email", t("email"), "email"), pw = field("password", t("password"), "current-password");
+  const row = document.createElement("div"); row.className = "row"; row.style.marginTop = "12px"; el.appendChild(row);
+  const bIn = document.createElement("button"); bIn.className = "ok"; bIn.textContent = t("signIn");
+  const bUp = document.createElement("button"); bUp.className = "no"; bUp.textContent = t("signUp");
+  row.append(bIn, bUp);
+  const msg = h("div", ""); msg.className = "fmsg";
+  const run = async fn => {
+    msg.className = "fmsg"; msg.textContent = "…"; bIn.disabled = bUp.disabled = true;
+    try{ const { error } = await fn(); if (error) throw error; return true; }
+    catch(e){ msg.className = "fmsg err"; msg.textContent = t("authErr", { msg: e.message }); return false; }
+    finally{ bIn.disabled = bUp.disabled = false; }
+  };
+  const creds = () => ({ email: em.value.trim(), password: pw.value });
+  bIn.onclick = async () => { if (await run(() => sb.auth.signInWithPassword(creds()))) closeSheet(); };
+  bUp.onclick = async () => {
+    // a guest session is upgraded in place, so its history is kept
+    const guest = authUser && authUser.is_anonymous;
+    if (await run(() => guest ? sb.auth.updateUser(creds()) : sb.auth.signUp(creds()))) msg.textContent = t("authCheck");
+  };
 }
 function openSheet(kind){
   sheetKind = kind; renderSheet();
-  $("sheetWrap").hidden = false; $("sheetWrap").querySelector(".sheet").scrollTop = 0;
-  $("sheetClose").focus();
+  $("sheetWrap").hidden = false;
+  $("sheetClose").focus({ preventScroll:true });
+  $("sheetWrap").querySelector(".sheet").scrollTop = 0;
 }
 function closeSheet(){ sheetKind = null; $("sheetWrap").hidden = true; }
+$("acct").onclick = () => openSheet("login");
 $("navAbout").onclick = () => openSheet("about");
 $("navHistory").onclick = () => openSheet("history");
 $("navSwap").onclick = () => { closeSheet(); switchTab("chat"); window.scrollTo({ top:0, behavior:"smooth" }); };
@@ -680,44 +802,26 @@ function applyStatic(){
   previewBtn.textContent = t("previewBtn");
   $("sheetClose").textContent = t("close");
   fillSel(fromSel, true); fillSel(toSel, true); syncAddrBoxes();
-  renderChains(); renderRecent(); updateWallet();
+  renderChains(); renderRecent(); updateWallet(); updateAcct();
   if (sheetKind) renderSheet();
   const rtl = /arabic|hebrew|persian|farsi|urdu|pashto|sindhi|yiddish/i.test(langName);
   document.documentElement.dir = rtl ? "rtl" : "ltr";
 }
 
 /* ============ LLM helper ============ */
-// Works inside Claude artifacts (no key needed). When opened as a plain file,
-// the browser has no key: set one with  localStorage.setItem("swaply_key","sk-ant-...")  in the console.
+// Goes through the Supabase Edge Function "chat", which holds the Anthropic key.
 function extractJSON(raw){
   const clean = raw.replace(/```json|```/g, "").trim();
   try{ return JSON.parse(clean); }catch(_){}
   const a = clean.indexOf("{"), b = clean.lastIndexOf("}");
   if (a >= 0 && b > a) return JSON.parse(clean.slice(a, b + 1));
-  throw new Error("LLM did not return JSON");
+  throw new Error("Could not read the reply");
 }
 async function callClaude(system, user){
-  const headers = { "Content-Type":"application/json" };
-  let key = null;
-  try{ key = localStorage.getItem("swaply_key"); }catch(_){}
-  if (key){
-    headers["x-api-key"] = key;
-    headers["anthropic-version"] = "2023-06-01";
-    headers["anthropic-dangerous-direct-browser-access"] = "true";
-  }
-  let res;
-  try{
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method:"POST", headers,
-      body: JSON.stringify({ model:MODEL, max_tokens:1000, system, messages:[{ role:"user", content:user }] })
-    });
-  }catch(e){ throw new Error("Cannot reach the LLM (network/CORS or no API key)"); }
-  let data;
-  try{ data = await res.json(); }catch(_){ throw new Error("LLM returned an invalid response (HTTP " + res.status + ")"); }
-  if (!res.ok || data.error || !Array.isArray(data.content))
-    throw new Error((data.error && data.error.message) || ("LLM request failed (HTTP " + res.status + ")"));
-  const raw = data.content.map(b => b.type === "text" ? b.text : "").join("");
-  return extractJSON(raw);
+  await authReady;
+  const { data, error } = await sb.functions.invoke("chat", { body:{ system, user } });
+  if (error || !data || typeof data.text !== "string") throw new Error((data && data.error) || t("llmDown"));
+  return extractJSON(data.text);
 }
 
 /* ============ Language switching ============ */
@@ -744,32 +848,47 @@ async function setLang(name){
   applyStatic();
 }
 
+/* ============ Open in wallet app (mobile browsers have no injected wallet) ============ */
+// Phantom: documented "browse" deeplink. MetaMask: dapp universal link.
+function offerWalletApp(type){
+  if (!/^https?:$/.test(location.protocol) || /^(localhost|127\.|0\.0\.0\.0)/.test(location.hostname)) return;
+  const here = location.href.split("#")[0];
+  const sol = type === "solana";
+  const href = sol
+    ? "https://phantom.app/ul/browse/" + encodeURIComponent(here) + "?ref=" + encodeURIComponent(location.origin)
+    : "https://metamask.app.link/dapp/" + here.replace(/^https?:\/\//, "");
+  const a = document.createElement("a");
+  a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer";
+  a.className = "msg bot";
+  a.style.cssText = "color:var(--neon);font-weight:700;text-decoration:none;border-color:var(--line)";
+  a.textContent = t(sol ? "openInPhantom" : "openInMetaMask");
+  log.appendChild(a); log.scrollTop = log.scrollHeight;
+}
+
 /* ============ Wallet ============ */
 walletBtn.onclick = async () => {
   const type = wtype(), name = CHAINS[chain].name;
   const say = (txt, err) => isChat() ? add(txt, "bot" + (err ? " err" : "")) : formSay(txt, err);
   if (type === "evm"){
     if (!window.ethereum){
-      say(t("noWallet"), false);
-      accounts.evm = "0x000000000000000000000000000000000000dEaD"; demo.evm = true;
-      updateWallet(); return;
+      say(t("noWallet"), false); offerWalletApp("evm");
+      return;
     }
     try{
       const accts = await window.ethereum.request({ method:"eth_requestAccounts" });
-      accounts.evm = accts[0]; demo.evm = false; updateWallet();
+      accounts.evm = accts[0]; updateWallet();
       const id = String(await window.ethereum.request({ method:"eth_chainId" })).toLowerCase();
       id !== CHAINS[chain].chainId ? say(t("wrongChain", { chain:name }), true) : say(t("connected", { chain:name }), false);
     }catch(e){ say(t("connectFail", { msg: e.message || t("cancelledReq") }), true); }
   } else {
     const sol = window.phantom?.solana || (window.solana?.isPhantom ? window.solana : null);
     if (!sol){
-      say(t("noPhantom"), false);
-      accounts.solana = "11111111111111111111111111111111"; demo.solana = true;
-      updateWallet(); return;
+      say(t("noPhantom"), false); offerWalletApp("solana");
+      return;
     }
     try{
       const r = await sol.connect();
-      accounts.solana = r.publicKey.toString(); demo.solana = false; updateWallet();
+      accounts.solana = r.publicKey.toString(); updateWallet();
       say(t("connected", { chain:name }), false);
     }catch(e){ say(t("connectFail", { msg: e.message || t("cancelledReq") }), true); }
   }
@@ -871,7 +990,8 @@ async function loadCustom(ch, addr){
     const r = parseFloat(p.attributes?.reserve_in_usd) || 0;
     if (r > liq){ liq = r; created = p.attributes?.pool_created_at || null; }
   });
-  if (liq < BLOCK_LIQ_USD) return { error: t("blockLiq", { n: fmt(liq, 0), min: fmt(BLOCK_LIQ_USD, 0) }) };
+  const pump = ch === "solana" && /pump$/.test(addr);   // pump.fun mints end with "pump"
+  if (liq < BLOCK_LIQ_USD) return { error: t("blockLiq", { n: fmt(liq, 0), min: fmt(BLOCK_LIQ_USD, 0) }) + (pump ? " " + t("pumpNoRoute", { url: "https://pump.fun/coin/" + addr }) : "") };
   const ev = raw ? evalSecurity(ch, raw) : null;
   if (ev?.block) return { error: t(ev.block, ev.vars) };
 
@@ -879,6 +999,7 @@ async function loadCustom(ch, addr){
   const vol = parseFloat(a.volume_usd?.h24) || 0;
   const symbol = String(a.symbol || "?").slice(0, 12);
   const risks = [];
+  if (pump) risks.push(["riskPump", {}]);
   if (liq < 10000) risks.push(["riskLowLiq", { n: fmt(liq, 0) }]);
   else if (liq < 50000) risks.push(["riskMedLiq", { n: fmt(liq, 0) }]);
   if (ageDays !== null && ageDays < 7) risks.push(["riskNewPool", { n: fmt(ageDays, 1) }]);
@@ -892,7 +1013,8 @@ async function loadCustom(ch, addr){
   }
   if (ch === "robinhood") risks.push(["riskRobinhood", {}]);
   risks.push(["riskScanLimit", {}]);
-  return { symbol, address: addr, id: addr, custom:true, usd:price, live:true, liq, ageDays, scanned: !!ev, risks };
+  const dec = Number(a.decimals);
+  return { symbol, address: addr, id: addr, custom:true, usd:price, live:true, liq, ageDays, scanned: !!ev, risks, pump, decimals: Number.isInteger(dec) && dec >= 0 && dec <= 12 ? dec : null };
 }
 
 async function resolveToken(sym, rawAddrs, ch){
@@ -968,24 +1090,20 @@ function getQuote(from, to, amount){
 }
 
 /* ============ Jupiter quote (Solana, built-in tokens, quote only) ============ */
-// Needs:  localStorage swaply_jup_key (Jupiter API key)  and  swaply_ref (your referralAccount).
+// Goes through the Supabase Edge Function "jupiter" (holds the Jupiter key + referral account).
 // No "taker" is sent, so Jupiter returns a price only. Nothing can be signed or executed here.
+const decOf = tk => tk.custom ? tk.decimals : JUP_DEC[tk.symbol];
 async function jupiterQuote(from, to, amount){
-  const key = ls("swaply_jup_key");
-  if (chain !== "solana" || !key || from.custom || to.custom) return null;
-  const dIn = JUP_DEC[from.symbol], dOut = JUP_DEC[to.symbol];
-  if (dIn == null || dOut == null) return null;
+  await cfgReady;
+  if (chain !== "solana" || !cfg.jup) return null;
+  const dIn = decOf(from), dOut = decOf(to);
+  if (!Number.isInteger(dIn) || !Number.isInteger(dOut)) return null;
   const mint = tk => tk.address === "native" ? WSOL : tk.address;
-  const params = new URLSearchParams({
-    inputMint: mint(from), outputMint: mint(to),
-    amount: String(Math.round(amount * 10 ** dIn))
-  });
-  const ref = ls("swaply_ref");
-  if (ref){ params.set("referralAccount", ref); params.set("referralFee", String(FEE_BPS)); }
+  const params = { inputMint: mint(from), outputMint: mint(to), amount: String(Math.round(amount * 10 ** dIn)) };
   try{
-    const r = await fetch(JUP_BASE + "/order?" + params, { headers: { "x-api-key": key } });
-    if (!r.ok) return null;
-    const o = await r.json();
+    const r = await jup("order", { params });
+    if (r.status < 200 || r.status >= 300) return null;
+    const o = r.body;
     const out = Number(o.outAmount) / 10 ** dOut;
     if (!(out > 0)) return null;
     const bps = Number(o.feeBps) || 0;
@@ -995,10 +1113,12 @@ async function jupiterQuote(from, to, amount){
 
 /* ============ REAL swap: Jupiter /order (with taker) -> wallet signs -> /execute ============ */
 const LIVE_MAX_USD = 25;        // hard cap per live swap while you test
+const LIVE_CUSTOM_MAX_USD = 5;  // custom / pump.fun tokens: much smaller cap
 const MAX_DEVIATION = 0.01;     // abort if the executable quote is >1% worse than the preview
-const liveReady = res => res.ch === "solana" && !demo.solana && !!accounts.solana
-  && ls("swaply_live") === "1" && !!ls("swaply_jup_key")
-  && !res.from.custom && !res.to.custom && res.q.live === true;
+const MAX_DEVIATION_CUSTOM = 0.03;  // volatile new tokens: 3%
+const liveReady = res => res.ch === "solana" && !!accounts.solana
+  && cfg.live && cfg.jup
+  && Number.isInteger(decOf(res.from)) && Number.isInteger(decOf(res.to)) && res.q.live === true;
 
 function loadWeb3(){
   if (window.solanaWeb3) return Promise.resolve(window.solanaWeb3);
@@ -1016,25 +1136,25 @@ const bytesToB64 = u => { let s = ""; u.forEach(x => s += String.fromCharCode(x)
 async function executeLive(res, say){
   const { from, to, amount, q } = res;
   const usd = amount * from.usd;
-  if (usd > LIVE_MAX_USD){ say(t("execMax", { cap: LIVE_MAX_USD }), true); return; }
+  const isCustom = !!(from.custom || to.custom);
+  const cap = isCustom ? LIVE_CUSTOM_MAX_USD : LIVE_MAX_USD;
+  if (usd > cap){ say(t("execMax", { cap }), true); return; }
   const sol = window.phantom?.solana || (window.solana?.isPhantom ? window.solana : null);
   if (!sol){ say(t("noPhantom"), true); return; }
-  const key = ls("swaply_jup_key"), ref = ls("swaply_ref");
   const mint = tk => tk.address === "native" ? WSOL : tk.address;
-  const params = new URLSearchParams({
+  const params = {
     inputMint: mint(from), outputMint: mint(to),
-    amount: String(Math.round(amount * 10 ** JUP_DEC[from.symbol])),
+    amount: String(Math.round(amount * 10 ** decOf(from))),
     taker: accounts.solana
-  });
-  if (ref){ params.set("referralAccount", ref); params.set("referralFee", String(FEE_BPS)); }
+  };
   try{
-    const r = await fetch(JUP_BASE + "/order?" + params, { headers: { "x-api-key": key } });
-    const o = await r.json();
-    if (!r.ok) throw new Error(o.error || o.message || ("HTTP " + r.status));
+    const r = await jup("order", { params });
+    const o = r.body || {};
+    if (r.status < 200 || r.status >= 300) throw new Error(o.error || o.message || ("HTTP " + r.status));
     if (!o.transaction) throw new Error(o.errorMessage || "no transaction returned");
     // Safety checks BEFORE anything is signed
-    const out = Number(o.outAmount) / 10 ** JUP_DEC[to.symbol];
-    if (!(out >= q.out * (1 - MAX_DEVIATION))){ say(t("execStale"), true); return; }
+    const out = Number(o.outAmount) / 10 ** decOf(to);
+    if (!(out >= q.out * (1 - (isCustom ? MAX_DEVIATION_CUSTOM : MAX_DEVIATION)))){ say(t("execStale"), true); return; }
     if ((Number(o.feeBps) || 0) > FEE_BPS + 25){ say(t("execFee"), true); return; }
 
     const web3 = await loadWeb3();
@@ -1042,12 +1162,8 @@ async function executeLive(res, say){
     say(t("execSigning"), false);
     const signed = await sol.signTransaction(tx);
     say(t("execSending"), false);
-    const er = await fetch(JUP_BASE + "/execute", {
-      method:"POST",
-      headers:{ "Content-Type":"application/json", "x-api-key": key },
-      body: JSON.stringify({ signedTransaction: bytesToB64(signed.serialize()), requestId: o.requestId })
-    });
-    const ex = await er.json();
+    const er = await jup("execute", { signedTransaction: bytesToB64(signed.serialize()), requestId: o.requestId });
+    const ex = er.body || {};
     if (ex.status === "Success" && ex.signature){
       say(t("execOk") + " https://solscan.io/tx/" + ex.signature, false);
     } else {
@@ -1121,9 +1237,10 @@ function showPreview(res, target, say){
   cancel.onclick = () => { card.classList.add("done"); say(t("cancelled"), false); };
   ok.onclick = () => {
     if (!acct){ say(t("connectFirst"), true); return; }
-    if (from.custom || to.custom || ch !== "solana" || !liveReady(res)){
+    if (ch !== "solana" || !liveReady(res)){
       card.classList.add("done");
-      say(ch === "solana" && !from.custom && !to.custom ? t("execNeed") : t("previewReady"), false);
+      const pk = [from, to].find(x => x.pump);
+      say(pk ? t("pumpNoRoute", { url: "https://pump.fun/coin/" + pk.address }) : (ch === "solana" ? t("execNeed") : t("previewReady")), false);
       return;
     }
     card.classList.add("done");
@@ -1150,6 +1267,13 @@ async function handle(){
     let masked = text;
     addrs.forEach((a, i) => { masked = masked.split(a).join("TOKEN_" + "AB"[i]); });
 
+    const known = new Set([...Object.values(TOKENS).flatMap(o => Object.keys(o))]);
+    const na = /\b(?:swap|convert|exchange|trade|sell)\s+([a-z_]{2,10})\s+(?:to|for|into|sa)\s+([a-z_]{2,10})\b/i.exec(masked);
+    if (!fastParse(masked) && na && known.has(na[1].toUpperCase()) && known.has(na[2].toUpperCase()) && !/\d/.test(masked)){
+      wait.remove();
+      add(t("askAmount", { from: na[1].toUpperCase(), to: na[2].toUpperCase() }), "bot");
+      return;
+    }
     const intent = fastParse(masked) || await callClaude(SYSTEM(), masked);
     if (intent.lang && intent.lang.toLowerCase() !== langName.toLowerCase()) await setLang(intent.lang).catch(() => {});
     if (intent.intent !== "swap"){ wait.remove(); add(intent.reply || t("askSwap"), "bot"); return; }
@@ -1178,6 +1302,7 @@ $("tabSwap").setAttribute("aria-selected","false"); $("tabChat").setAttribute("a
 resetForm();
 applyStatic();
 add(t("welcome"), "bot");
+loadHistory();
 </script>
 </body>
 </html>
