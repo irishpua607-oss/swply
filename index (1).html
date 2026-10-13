@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swaply</title>
+<style>
+  :root{
+    --bg:#040A08; --panel:#0A1612; --panel2:#0D1D17; --line:rgba(77,255,145,.24); --line2:rgba(255,255,255,.09);
+    --neon:#4DFF91; --neon2:#2FE57A; --ink:#E9F6EF; --muted:#8FAB9E; --warn:#F2D98B; --bad:#FF8A78; --r:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:radial-gradient(1100px 480px at 72% -8%, rgba(77,255,145,.11), transparent 62%), var(--bg);
+    color:var(--ink); font:15px/1.5 Inter,"Segoe UI",system-ui,-apple-system,sans-serif; min-height:100vh;
+    color-scheme:dark;
+  }
+  button{font:inherit; color:inherit; cursor:pointer}
+  svg.i{width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; flex:none}
+  button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--neon); outline-offset:2px}
+  button:disabled{opacity:.5; cursor:not-allowed}
+
+  /* ---------- layout ---------- */
+  .app{display:grid; grid-template-columns:210px minmax(0,1fr) 330px; grid-template-areas:"top top top" "side main rail"; min-height:100vh}
+  .top{grid-area:top; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 20px; border-bottom:1px solid var(--line2)}
+  .side{grid-area:side; padding:16px 12px; border-inline-end:1px solid var(--line2); display:flex; flex-direction:column; gap:6px}
+  main{grid-area:main; padding:16px; display:flex; flex-direction:column; gap:16px; min-width:0}
+  .rail{grid-area:rail; padding:16px 16px 16px 0; display:flex; flex-direction:column; gap:16px; min-width:0}
+  @media (max-width:1180px){
+    .app{grid-template-columns:200px minmax(0,1fr); grid-template-areas:"top top" "side main" "side rail"}
+    .rail{padding:0 16px 16px}
+  }
+  @media (max-width:860px){
+    .app{grid-template-columns:1fr; grid-template-areas:"top" "main" "rail"; padding-bottom:76px}
+    .side{position:fixed; inset:auto 0 0 0; z-index:5; flex-direction:row; justify-content:space-around; padding:8px 10px; background:rgba(4,10,8,.96); border-top:1px solid var(--line); border-inline-end:0; backdrop-filter:blur(8px)}
+    .tag{display:none}
+    main{padding:12px}
+    .rail{padding:0 12px 12px}
+  }
+
+  /* ---------- header ---------- */
+  .brand{display:flex; align-items:center; gap:10px; min-width:0}
+  .wm{font-weight:800; font-size:22px; letter-spacing:.02em}
+  .wm b{color:var(--neon)}
+  .tag{color:var(--muted); font-size:14px; padding-inline-start:14px; border-inline-start:1px solid var(--line2)}
+  .topr{display:flex; align-items:center; gap:10px}
+  .netsel{display:flex; align-items:center; gap:8px; border:1px solid var(--line2); background:var(--panel); border-radius:12px; padding:6px 10px}
+  .dot{width:10px; height:10px; border-radius:50%; background:var(--neon); box-shadow:0 0 10px var(--neon)}
+  .netsel select{background:transparent; color:var(--ink); border:0; font:inherit; font-size:14px; max-width:130px}
+  #wallet{display:flex; align-items:center; gap:8px; border:0; border-radius:12px; padding:10px 16px; font-weight:700; background:linear-gradient(90deg,#6BFF9C,#35EC7C); color:#04140B; white-space:nowrap}
+  #acct{border:1px solid var(--line2); background:var(--panel); color:var(--ink); border-radius:12px; padding:10px 14px; font-weight:700; white-space:nowrap; max-width:140px; overflow:hidden; text-overflow:ellipsis}
+  #wallet.on{background:var(--panel2); color:var(--neon); border:1px solid var(--line)}
+
+  /* ---------- sidebar ---------- */
+  .nav{display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid transparent; border-radius:12px; background:transparent; color:var(--ink); text-align:start}
+  .nav:hover{background:var(--panel)}
+  .nav[aria-current="page"]{background:linear-gradient(90deg,rgba(77,255,145,.2),rgba(77,255,145,.06)); border-color:var(--line); color:var(--neon)}
+  @media (max-width:860px){ .nav{flex-direction:column; gap:2px; padding:6px 14px; font-size:12px} }
+
+  /* ---------- panels ---------- */
+  .panel{background:linear-gradient(180deg,var(--panel),#08110E); border:1px solid var(--line); border-radius:var(--r); padding:16px; box-shadow:0 0 28px rgba(77,255,145,.06)}
+  .panel h3{margin:0 0 8px; font-size:17px}
+  .hero{position:relative; overflow:hidden; padding:22px 20px; min-height:170px}
+  .hero .eyebrow{font-size:12px; letter-spacing:.22em; color:var(--neon)}
+  .hero h2{margin:4px 0 6px; font-size:clamp(30px,6vw,46px); line-height:1.05; font-weight:800}
+  .hero h2 span{color:var(--neon)}
+  .hero p{margin:0 0 14px; color:var(--muted); max-width:34ch}
+  .chips{display:flex; flex-wrap:wrap; gap:8px}
+  .pill{font-size:12px; padding:5px 10px; border-radius:10px; border:1px solid var(--line); background:rgba(77,255,145,.06); color:var(--ink); display:inline-flex; align-items:center; gap:6px}
+  .pill.warnp{border-color:rgba(242,217,139,.4); color:var(--warn); background:rgba(242,217,139,.07)}
+  .orb{position:absolute; inset-inline-end:-20px; top:-10px; width:260px; height:200px; pointer-events:none; opacity:.9}
+  @media (max-width:640px){ .orb{opacity:.35} }
+
+  /* ---------- tabs + swap form ---------- */
+  .tabs{display:flex; gap:8px; margin-bottom:14px}
+  .tab{display:flex; align-items:center; gap:8px; padding:10px 18px; border-radius:12px; border:1px solid var(--line2); background:transparent; color:var(--muted)}
+  .tab[aria-selected="true"]{border-color:var(--neon); background:rgba(77,255,145,.12); color:var(--ink)}
+  .field{background:var(--panel2); border:1px solid var(--line2); border-radius:12px; padding:12px 14px}
+  .field label{font-weight:700; display:block}
+  .field small{color:var(--muted); display:block; margin-bottom:8px}
+  .tokrow{display:flex; flex-direction:column; gap:8px}
+  select.tok,.in{width:100%; background:#08140F; color:var(--ink); border:1px solid var(--line); border-radius:10px; padding:11px 12px; font:inherit}
+  .flipwrap{display:flex; justify-content:center; margin:-14px 0; position:relative; z-index:1}
+  .flip{width:42px; height:42px; border-radius:50%; border:1px solid var(--neon); background:var(--bg); color:var(--neon); display:grid; place-items:center; box-shadow:0 0 14px rgba(77,255,145,.25)}
+  .recvrow{display:flex; align-items:center; gap:10px; margin-top:10px; font-size:14px}
+  .recvrow .muted{color:var(--muted)}
+  .cta{width:100%; margin-top:14px; padding:14px; border:0; border-radius:12px; font-weight:800; font-size:16px; background:linear-gradient(90deg,#7BFFA8,#35EC7C); color:#04140B; box-shadow:0 0 22px rgba(77,255,145,.25)}
+  .fmsg{margin-top:10px; font-size:14px; color:var(--muted); min-height:1px}
+  .fmsg.err{color:var(--bad)}
+  .gap{display:flex; flex-direction:column; gap:12px}
+  .ico{width:34px; height:34px; border-radius:50%; display:grid; place-items:center; font-size:11px; font-weight:800; color:#04140B; flex:none}
+
+  /* ---------- chat ---------- */
+  #log{height:min(52vh,420px); overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:2px 2px 10px}
+  .msg{max-width:90%; padding:10px 14px; border-radius:16px; white-space:pre-wrap; word-wrap:break-word}
+  .me{align-self:flex-end; background:#12432A; border:1px solid var(--line)}
+  .bot{align-self:flex-start; background:var(--panel2); border:1px solid var(--line2)}
+  .err{color:var(--bad)}
+  #bar{display:flex; gap:8px; margin-top:8px}
+  #inp{flex:1; min-width:0}
+  #send{padding:0 18px; border:0; border-radius:12px; font-weight:800; background:linear-gradient(90deg,#7BFFA8,#35EC7C); color:#04140B}
+
+  /* ---------- preview card ---------- */
+  .preview{align-self:stretch; background:#08140F; border:1.5px solid var(--neon); border-radius:12px; padding:14px; margin-top:12px; box-shadow:0 0 22px rgba(77,255,145,.15)}
+  .preview h2{font-size:16px; margin:0 0 10px}
+  .sell,.buy{display:flex; justify-content:space-between; align-items:baseline; gap:8px}
+  .sub{font-size:12px; color:var(--muted)}
+  .big{font-size:22px; font-weight:800}
+  .arrow{color:var(--muted); margin:2px 0}
+  dl{margin:12px 0; display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:13px}
+  dt{color:var(--muted)} dd{margin:0; text-align:end; word-break:break-all}
+  .warn{background:rgba(242,217,139,.1); color:var(--warn); border-radius:8px; padding:8px 10px; font-size:12px; margin-bottom:12px}
+  .warn.risk{background:rgba(255,122,102,.12); color:#FFB8AA}
+  .warn.risk ul{margin:4px 0 0; padding-inline-start:18px}
+  .links{font-size:13px; margin-bottom:12px; display:flex; flex-direction:column; gap:2px}
+  .links a{color:var(--neon)}
+  .ack{display:flex; gap:8px; align-items:flex-start; font-size:13px; margin-bottom:12px}
+  .ack input{margin-top:3px; width:18px; height:18px; flex:none; accent-color:var(--neon)}
+  .row{display:flex; gap:8px}
+  .row button{flex:1; padding:12px; border-radius:10px; font-weight:700; border:1.5px solid var(--neon)}
+  .ok{background:var(--neon); color:#04140B}
+  .no{background:transparent; color:var(--neon)}
+  .preview.done{opacity:.5; pointer-events:none}
+
+  /* ---------- rail ---------- */
+  ul.list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column}
+  ul.list li{border-top:1px solid var(--line2)}
+  ul.list li:first-child{border-top:0}
+  .net{width:100%; display:flex; align-items:center; gap:12px; padding:11px 2px; background:transparent; border:0; text-align:start}
+  .net .nm{flex:1; min-width:0}
+  .net .nm small{display:block; color:var(--muted); font-size:12px}
+  .net .st{font-size:12px; color:var(--neon); background:rgba(77,255,145,.12); border-radius:8px; padding:3px 10px}
+  .hist{display:flex; align-items:center; gap:12px; padding:11px 2px}
+  .hist .nm{flex:1; min-width:0}
+  .hist .nm small{display:block; color:var(--neon); font-size:12px}
+  .hist .tm{font-size:12px; color:var(--muted); text-align:end}
+  .empty{color:var(--muted); font-size:14px; margin:4px 0}
+  .promo{display:flex; gap:12px; align-items:center}
+  .promo p{margin:0; color:var(--muted); font-size:14px}
+  .promo h3{margin-bottom:4px}
+
+  /* ---------- why strip ---------- */
+  .why{display:grid; grid-template-columns:1.3fr repeat(4,1fr); gap:14px; align-items:center}
+  .why h3{margin:0; font-size:16px}
+  .why p{margin:2px 0 0; color:var(--muted); font-size:13px}
+  .why .it{display:flex; gap:10px; align-items:flex-start}
+  .why .it svg{color:var(--neon); margin-top:2px}
+  .why .it b{display:block; font-size:13px}
+  .why .it span{font-size:12px; color:var(--muted)}
+  @media (max-width:1180px){ .why{grid-template-columns:1fr 1fr} .why > :first-child{grid-column:1/-1} }
+
+  /* ---------- sheet ---------- */
+  #sheetWrap{position:fixed; inset:0; background:rgba(0,0,0,.65); display:flex; align-items:flex-end; justify-content:center; z-index:20}
+  #sheetWrap[hidden]{display:none}
+  .sheet{background:var(--panel); border:1px solid var(--line); width:100%; max-width:600px; max-height:88vh; overflow-y:auto; padding:20px 20px 24px; border-radius:16px 16px 0 0}
+  @media (min-width:861px){ #sheetWrap{align-items:center} .sheet{border-radius:16px} }
+  .sheet h2{font-size:22px; margin:0 0 8px}
+  .sheet h3{font-size:16px; margin:18px 0 4px; color:var(--neon)}
+  .sheet p,.sheet li{font-size:14px; margin:4px 0; color:var(--ink)}
+  .sheet ol,.sheet ul{padding-inline-start:20px; margin:4px 0}
+  .sheet .close{width:100%; margin-top:18px; padding:12px; border-radius:10px; border:1.5px solid var(--neon); background:var(--neon); color:#04140B; font-weight:800}
+  @media (prefers-reduced-motion:reduce){ *{animation:none!important; transition:none!important} }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h13v4M3 7v10a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H5a2 2 0 0 1-2-2zM16 14h2"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></symbol>
+    <symbol id="i-flip" viewBox="0 0 24 24"><path d="M7 4v14M7 18l-3-3M7 18l3-3M17 20V6M17 6l-3 3M17 6l3 3"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-logo" viewBox="0 0 40 40"><path d="M20 3l6 11 11 6-11 6-6 11-6-11L3 20l11-6z" fill="none" stroke="#4DFF91" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="20" r="3.2" fill="#4DFF91"/></symbol>
+  </defs>
+</svg>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <svg width="38" height="38" aria-hidden="true"><use href="#i-logo"/></svg>
+      <span class="wm">SWAP<b>LY</b></span>
+      <span class="tag" data-i18n="tagline"></span>
+    </div>
+    <div class="topr">
+      <label class="netsel"><span class="dot"></span><select id="chainSel" aria-label="Network"></select></label>
+      <button id="acct"></button>
+      <button id="wallet"><svg class="i"><use href="#i-wallet"/></svg><span id="walletTxt"></span></button>
+    </div>
+  </header>
+
+  <nav class="side" aria-label="Main">
+    <button class="nav" id="navSwap" aria-current="page"><svg class="i"><use href="#i-swap"/></svg><span data-i18n="navSwap"></span></button>
+    <button class="nav" id="navHistory"><svg class="i"><use href="#i-clock"/></svg><span data-i18n="navHistory"></span></button>
+    <button class="nav" id="navAbout"><svg class="i"><use href="#i-info"/></svg><span data-i18n="navAbout"></span></button>
+  </nav>
+
+  <main>
+    <section class="panel hero">
+      <svg class="orb" viewBox="0 0 260 200" aria-hidden="true">
+        <defs><radialGradient id="g" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#4DFF91" stop-opacity=".55"/><stop offset="1" stop-color="#4DFF91" stop-opacity="0"/></radialGradient></defs>
+        <circle cx="150" cy="100" r="95" fill="url(#g)"/>
+        <ellipse cx="150" cy="100" rx="105" ry="38" fill="none" stroke="#4DFF91" stroke-opacity=".35" transform="rotate(-18 150 100)"/>
+        <ellipse cx="150" cy="100" rx="105" ry="38" fill="none" stroke="#4DFF91" stroke-opacity=".2" transform="rotate(24 150 100)"/>
+        <path d="M150 55l22 33 33 12-33 12-22 33-22-33-33-12 33-12z" fill="#07130E" stroke="#4DFF91" stroke-width="2.4" stroke-linejoin="round"/>
+        <circle cx="150" cy="100" r="7" fill="#4DFF91"/>
+      </svg>
+      <div class="eyebrow" data-i18n="heroEyebrow"></div>
+      <h2>Swap <span data-i18n="heroTitle2"></span></h2>
+      <p data-i18n="heroSub"></p>
+      <div class="chips">
+        <span class="pill"><svg class="i" style="width:14px;height:14px"><use href="#i-globe"/></svg><span data-i18n="chipLang"></span></span>
+        <span class="pill"><svg class="i" style="width:14px;height:14px"><use href="#i-bolt"/></svg><span data-i18n="chipChains"></span></span>
+        <span class="pill"><svg class="i" style="width:14px;height:14px"><use href="#i-shield"/></svg><span data-i18n="chipSafe"></span></span>
+        <span class="pill warnp"><svg class="i" style="width:14px;height:14px"><use href="#i-info"/></svg><span data-i18n="stepNote"></span></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="tabs" role="tablist" hidden>
+        <button class="tab" id="tabSwap" role="tab" aria-selected="true"><svg class="i"><use href="#i-swap"/></svg><span data-i18n="tabSwap"></span></button>
+        <button class="tab" id="tabChat" role="tab" aria-selected="false"><svg class="i"><use href="#i-chat"/></svg><span data-i18n="tabChat"></span></button>
+      </div>
+
+      <div id="paneSwap">
+        <div class="gap">
+          <div class="field">
+            <label for="fromSel" data-i18n="fromLabel"></label><small data-i18n="fromHint"></small>
+            <div class="tokrow"><select class="tok" id="fromSel"></select><input class="in" id="fromAddr" hidden autocomplete="off" spellcheck="false"></div>
+          </div>
+          <div class="flipwrap"><button class="flip" id="flip" aria-label="Flip"><svg class="i"><use href="#i-flip"/></svg></button></div>
+          <div class="field">
+            <label for="toSel" data-i18n="toLabel"></label><small data-i18n="toHint"></small>
+            <div class="tokrow"><select class="tok" id="toSel"></select><input class="in" id="toAddr" hidden autocomplete="off" spellcheck="false"></div>
+          </div>
+          <div class="field">
+            <label for="amt" data-i18n="amountLabel"></label><small data-i18n="amountHint"></small>
+            <input class="in" id="amt" inputmode="decimal" autocomplete="off" placeholder="10">
+            <div class="recvrow"><span class="muted" data-i18n="receiveLabel"></span><b id="recv">—</b></div>
+          </div>
+        </div>
+        <button class="cta" id="previewBtn"></button>
+        <div class="fmsg" id="formMsg" aria-live="polite"></div>
+        <div id="slot"></div>
+      </div>
+
+      <div id="paneChat" hidden>
+        <div id="log" aria-live="polite"></div>
+        <div id="bar"><input class="in" id="inp" autocomplete="off"><button id="send"></button></div>
+      </div>
+    </section>
+
+    <section class="panel why">
+      <div><h3 data-i18n="whyTitle"></h3><p data-i18n="whyDesc"></p></div>
+      <div class="it"><svg class="i"><use href="#i-globe"/></svg><div><b data-i18n="why1H"></b><span data-i18n="why1"></span></div></div>
+      <div class="it"><svg class="i"><use href="#i-shield"/></svg><div><b data-i18n="why2H"></b><span data-i18n="why2"></span></div></div>
+      <div class="it"><svg class="i"><use href="#i-check"/></svg><div><b data-i18n="why3H"></b><span data-i18n="why3"></span></div></div>
+      <div class="it"><svg class="i"><use href="#i-bolt"/></svg><div><b data-i18n="why4H"></b><span data-i18n="why4"></span></div></div>
+    </section>
+  </main>
+
+  <aside class="rail">
+    <section class="panel"><h3 data-i18n="railNetworks"></h3><ul class="list" id="netList"></ul></section>
+    <section class="panel"><h3 data-i18n="railRecent"></h3><ul class="list" id="recent"></ul></section>
+    <section class="panel promo">
+      <svg class="i" style="width:34px;height:34px;color:var(--neon)"><use href="#i-shield"/></svg>
+      <div><h3 data-i18n="promoTitle"></h3><p data-i18n="promoText"></p></div>
+    </section>
+  </aside>
+</div>
+
+<div id="sheetWrap" hidden role="dialog" aria-modal="true">
+  <div class="sheet"><div id="sheetBody"></div><button class="close" id="sheetClose"></button></div>
+</div>
+
+<script>
+/* ============ CONFIG ============ */
+const CHAINS = {
+  base:      { name:"Base",            gt:"base",      type:"evm",    chainId:"0x2105", gp:"8453", explorer:"https://basescan.org/token/" },
+  ethereum:  { name:"Ethereum",        gt:"eth",       type:"evm",    chainId:"0x1",    gp:"1",    explorer:"https://etherscan.io/token/" },
+  bnb:       { name:"BNB Chain",       gt:"bsc",       type:"evm",    chainId:"0x38",   gp:"56",   explorer:"https://bscscan.com/token/" },
+  solana:    { name:"Solana",          gt:"solana",    type:"solana",                              explorer:"https://solscan.io/token/" },
+  robinhood: { name:"Robinhood Chain", gt:"robinhood", type:"evm",    chainId:"0x1237", gp:"4663", explorer:"https://robinhoodchain.blockscout.com/token/" }
+};
+const WETH_ETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+const WETH_BASE = "0x4200000000000000000000000000000000000006";
+const WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2de08d9173bc095c";
+const WSOL = "So11111111111111111111111111111111111111112";
+// VERIFY every address on the chain's explorer before using real funds.
+const TOKENS = {
+  base: {
+    ETH:  { address:"native", price:{ net:"base", addr:WETH_BASE } },
+    WETH: { address:WETH_BASE },
+    USDC: { address:"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },
+    DAI:  { address:"0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb" }
+  },
+  ethereum: {
+    ETH:  { address:"native", price:{ net:"eth", addr:WETH_ETH } },
+    WETH: { address:WETH_ETH },
+    USDC: { address:"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" },
+    USDT: { address:"0xdAC17F958D2ee523a2206206994597C13D831ec7" },
+    DAI:  { address:"0x6B175474E89094C44Da98b954EedeAC495271d0F" }
+  },
+  bnb: {
+    BNB:  { address:"native", price:{ net:"bsc", addr:WBNB } },
+    WBNB: { address:WBNB },
+    USDT: { address:"0x55d398326f99059fF775485246999027B3197955" },
+    USDC: { address:"0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d" }
+  },
+  solana: {
+    SOL:  { address:"native", price:{ net:"solana", addr:WSOL } },
+    WSOL: { address:WSOL },
+    USDC: { address:"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
+    USDT: { address:"Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" }
+  },
+  // Official token addresses on Robinhood Chain were not verified, so only native ETH is preset.
+  robinhood: {
+    ETH:  { address:"native", price:{ net:"eth", addr:WETH_ETH } }
+  }
+};
+const SAMPLE_USD = { ETH:3000, WETH:3000, USDC:1, USDT:1, DAI:1, BNB:600, WBNB:600, SOL:150, WSOL:150 };
+const DEFAULT_SLIPPAGE = 0.5;
+const MAX_SWAP_USD = 1000;
+const CUSTOM_MAX_USD = 50;
+const BLOCK_LIQ_USD = 5000;
+const MAX_TAX_BLOCK = 0.30;
+const TAX_WARN = 0.05;
+const MODEL = "claude-sonnet-4-6";
+// Integrator fee (Jupiter referral range: 50-255 bps). Jupiter keeps 20% of it.
+const FEE_BPS = 50;
+const JUP_BASE = "https://api.jup.ag/swap/v2";
+const JUP_DEC = { SOL:9, WSOL:9, USDC:6, USDT:6 };
+/* ============ Supabase (replaces localStorage) ============ */
+// Secrets (Anthropic / Jupiter keys, referral, live flag) live in Supabase Edge Function secrets, never in the browser.
+const SUPABASE_URL = "https://klfafovhuicekqyonfii.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtsZmFmb3ZodWljZWtxeW9uZmlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4ODUzMzksImV4cCI6MjEwNzQ2MTMzOX0.SrGcwXjW05yb9CTAO-qHi1bBcs9--6axw23tUGYPy9w"; // public anon key, safe in the browser
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const authReady = (async () => {
+  try{ const { data } = await sb.auth.getSession(); if (!data.session) await sb.auth.signInAnonymously(); }catch(_){}
+})();
+let authUser = null;
+const isGuest = () => !authUser || authUser.is_anonymous;
+sb.auth.onAuthStateChange((ev, session) => {
+  authUser = session ? session.user : null;
+  updateAcct();
+  if (ev === "SIGNED_IN" || ev === "USER_UPDATED") setTimeout(loadHistory, 0);
+  if (ev === "SIGNED_OUT"){ history.length = 0; renderRecent(); }
+});
+const cfg = { jup:false, live:false };
+const jup = async (action, payload) => {
+  await authReady;
+  const { data, error } = await sb.functions.invoke("jupiter", { body:{ action, ...payload } });
+  if (error) throw error;
+  return data;
+};
+const cfgReady = authReady.then(async () => {
+  try{ const d = await jup("status"); cfg.jup = !!d.jup; cfg.live = !!d.live; }catch(_){}
+});
+
+/* ============ i18n: English source strings ============ */
+const EN = {
+  tagline: "Swap tokens by chatting. Any language.",
+  navSwap: "Swap", navHistory: "History", navAbout: "About",
+  heroEyebrow: "SWAP VIA CHAT",
+  heroTitle2: "Any Token",
+  heroSub: "Say it in your language. Check the preview. You confirm.",
+  chipLang: "Any language", chipChains: "5 networks", chipSafe: "Security checks",
+  stepNote: "Preview first. Nothing is sent without your wallet signature",
+  tabSwap: "Swap", tabChat: "Chat",
+  fromLabel: "From", fromHint: "Choose the token you sell",
+  toLabel: "To", toHint: "Choose the token you want",
+  amountLabel: "Amount", amountHint: "How much do you want to swap?",
+  receiveLabel: "You'll receive",
+  customAddr: "Other token (paste contract address)",
+  addrPlaceholder: "Contract address or mint",
+  previewBtn: "Preview swap",
+  railNetworks: "Networks", selected: "Selected",
+  railRecent: "Recent previews",
+  noHistory: "No previews yet. Your swap previews will show up here.",
+  historyTitle: "History",
+  timeNow: "just now", timeMin: "{n}m ago", timeHour: "{n}h ago",
+  promoTitle: "Safer by design",
+  promoText: "Liquidity and security checks run on unfamiliar tokens, and you always confirm yourself.",
+  whyTitle: "Why Swaply?", whyDesc: "One place. Five networks. Fewer mistakes.",
+  why1H: "Any language", why1: "Type it your way.",
+  why2H: "Safer checks", why2: "Liquidity and security scans.",
+  why3H: "You confirm", why3: "Nothing moves without you.",
+  why4H: "Multi-chain", why4: "Ethereum, Base, BNB, Solana, Robinhood.",
+  connect: "Connect wallet",
+  placeholder: "Try: swap 50 USDC to ETH",
+  send: "Send",
+  welcome: "Hi! Tell me what you'd like to swap, e.g. “swap 50 USDC to ETH”. Nothing is sent without your confirmation. For a token that isn't on the list, paste its contract address.",
+  noWallet: "No wallet found in this browser. Open this page in MetaMask or another wallet app's browser to connect.",
+  noPhantom: "No Solana wallet found. Install Phantom or open this page in the Phantom app's browser to connect.",
+  wrongChain: "Your wallet is connected but not on {chain}. Switch networks in your wallet before swapping.",
+  connected: "Connected. Network: {chain}. What would you like to swap?",
+  connectFail: "Couldn't connect wallet: {msg}",
+  cancelledReq: "request cancelled",
+  switchedChain: "Switched to {chain}.",
+  badToken: "That token isn't supported on {chain}. Choose from: {list}, or paste a contract address.",
+  addrWrongChain: "That contract address isn't valid for {chain}. Select the right network first.",
+  sameToken: "The token you sell and the token you receive must be different.",
+  badAmount: "Amount must be a positive number.",
+  overCap: "This swap is over the ${cap} safety cap.",
+  review: "Review swap",
+  youSell: "You sell",
+  youReceive: "You receive (est.)",
+  rate: "Rate",
+  fee: "Fee",
+  slippage: "Slippage",
+  min: "min.",
+  network: "Network",
+  recipient: "Recipient",
+  notConnected: "Connect wallet first",
+  contract: "{token} contract",
+  native: "native",
+  sampleWarn: "Sample prices, not an executable quote. Real swaps are not enabled for this pair.",
+  liveWarn: "Indicative price from GeckoTerminal, not an executable quote. Real swaps are not enabled for this pair.",
+  execWarn: "REAL MONEY. You will be asked to sign in your wallet. Blockchain swaps cannot be undone.",
+  execMax: "Live swaps are limited to ${cap} for now.",
+  execNeed: "Real swap needs: Phantom connected, a Jupiter API key, and live mode on (see the setup steps).",
+  execStale: "The price moved too much since the preview. Nothing was sent. Run the preview again.",
+  riskPump: "This looks like a pump.fun token. New meme coins like this often lose all their value or turn out to be rug pulls.",
+  pumpNoRoute: "This pump.fun token can't be swapped here yet (it may still be on the pump.fun bonding curve). You can trade it on pump.fun: {url}",
+  execFee: "Unexpected fee from the quote. Nothing was sent.",
+  execSigning: "Approve the request in your wallet…",
+  execSending: "Sending the swap…",
+  execOk: "Swap done. View it here:",
+  execFail: "Swap failed: {msg}",
+  cancel: "Cancel",
+  confirm: "Confirm",
+  cancelled: "Swap cancelled.",
+  connectFirst: "Connect your wallet first.",
+  openInPhantom: "Open this page in Phantom →",
+  openInMetaMask: "Open this page in MetaMask →",
+  previewReady: "Preview ready. In Step 2, your wallet's signature request will appear here. No transaction was sent.",
+  askSwap: "What would you like to swap?",
+  askAmount: "How much {from} do you want to swap to {to}? For example: swap 50 {from} to {to}",
+  llmDown: "Could not read that message right now. Try a simple command like: swap 50 USDC to ETH",
+  error: "Something went wrong: {msg}. Please try again.",
+  checking: "Checking token data…",
+  tokenNotFound: "I couldn't verify this token with GeckoTerminal, so I won't prepare a swap for it.",
+  tokenLookupFail: "I couldn't reach GeckoTerminal to check this token. Please try again later.",
+  customCap: "Swaps involving unverified tokens are limited to ${cap}.",
+  liquidity: "Liquidity",
+  poolAge: "Pool age",
+  days: "{n} days",
+  viewExplorer: "view on explorer",
+  riskTitle: "Unverified token: check these risks",
+  riskLowLiq: "Very low liquidity (about ${n}). You may not be able to sell it back.",
+  riskMedLiq: "Low liquidity (about ${n}). Expect large price impact.",
+  riskNewPool: "Very new pool ({n} days old).",
+  riskNoVol: "No trading volume in the last 24 hours.",
+  riskSymbol: "This token uses the same symbol as {sym} but a different contract. It may be a fake.",
+  riskSolana: "On Solana, check that the token's mint and freeze authorities are revoked. The scan was unavailable, so this was not checked.",
+  riskRobinhood: "Robinhood Chain is permissionless. Anyone can create a token, and a name or symbol that looks like a stock or Robinhood proves nothing.",
+  riskScanUnavailable: "The security scan was unavailable for this token or network. Treat it as unchecked.",
+  riskScanLimit: "Passing a scan lowers risk but does not prove a token is safe.",
+  riskImpact: "This swap is about {pct}% of the pool's liquidity, so expect a large price impact.",
+  riskTax: "Buy/sell tax is about {pct}%.",
+  riskMint: "The owner can mint more supply.",
+  riskOwner: "The owner has hidden or reclaimable control of the contract.",
+  riskBlacklist: "The contract can blacklist addresses or pause transfers.",
+  riskSlip: "Taxes or slippage can be changed by the owner.",
+  riskProxy: "Upgradeable (proxy) contract: its code can change.",
+  riskClosed: "Contract source code is not verified.",
+  riskSolMint: "Mint authority is still active: more supply can be created.",
+  riskSolFreeze: "Freeze authority is active: your tokens could be frozen.",
+  blockLiq: "Blocked: this token's liquidity is only about ${n}, below the ${min} minimum Swaply allows.",
+  blockCantTrade: "Blocked: the security scan says this token can't be freely bought or sold (possible honeypot).",
+  blockTax: "Blocked: this token has a very high buy or sell tax (about {pct}%).",
+  scanLabel: "Security scan",
+  scanOk: "No critical flags",
+  scanNone: "Unavailable",
+  riskAck: "I understand the risks and want to continue.",
+  close: "Close",
+  login: "Log in", logout: "Log out", loginTitle: "Account", email: "Email", password: "Password",
+  signIn: "Sign in", signUp: "Sign up", signedAs: "Signed in as {email}",
+  authErr: "Login failed: {msg}", authCheck: "Account created. If email confirmation is on, check your inbox, then sign in.",
+  aboutTitle: "About Swaply",
+  aboutWhatH: "What it is",
+  aboutWhat: "Swaply is a chat for swapping crypto tokens on Ethereum, Base, BNB Chain, Solana, and Robinhood Chain. You say what you want in your own words, in any language, and Swaply prepares a clear preview that you check and confirm yourself.",
+  aboutWhyH: "Why it exists",
+  aboutWhy: "Swapping crypto usually means juggling token lists, slippage settings, and contract addresses, which is confusing for newcomers and easy to get wrong. Swaply replaces that with plain conversation, while keeping you in full control of your money. It is built for beginners, for people who prefer their own language, and for anyone who wants a double-check before signing.",
+  aboutHowH: "How it works",
+  aboutHow1: "You type a request in the chat, for example “swap 50 USDC to ETH”, in any language.",
+  aboutHow2: "Swaply reads your typed message and extracts only the network, token pair, and amount. It never touches your funds.",
+  aboutHow3: "Swaply's own code checks the request: supported tokens, valid amount, and a safety cap.",
+  aboutHow4: "Swaply shows a preview with the rate, fee, slippage, network, recipient, and token contract addresses.",
+  aboutHow5: "You confirm in your own wallet. Nothing happens without your signature.",
+  aboutSafeH: "Safety principles",
+  aboutSafe1: "Swaply never holds or sees your private keys.",
+  aboutSafe2: "Swaply only interprets what you mean. It cannot send a transaction without your wallet signature.",
+  aboutSafe3: "Well-known tokens are on an allowlist. Other tokens can be added by contract address, but only after liquidity and security checks, with warnings, and with a much lower limit per swap. Tokens with very thin liquidity, honeypot flags, or extreme taxes are blocked.",
+  aboutSafe4: "You always see the exact amounts and contract addresses before you sign.",
+  aboutUseH: "How to use it",
+  aboutUse1: "Simple swap: “swap 100 USDC to ETH”.",
+  aboutUse2: "Buy with a token: “buy ETH with 50 USDC”.",
+  aboutUse3: "Pick a network: “swap 0.1 SOL to USDC on solana”.",
+  aboutUse4: "Custom token on Solana: “swap 0.1 SOL to” followed by the contract address. The address is handled directly by Swaply's code.",
+  aboutUse5: "pump.fun tokens: paste the token address. Only tokens that already trade in an exchange pool can be swapped here. Live swaps of custom tokens are limited to $5. Tokens still on the bonding curve are not supported yet.",
+  aboutLiveH: "Real swaps (Solana only)",
+  aboutLive: "Real swaps work only on Solana, for SOL, WSOL, USDC and USDT, through Jupiter. They need your own Jupiter API key, a referral account, live mode turned on, and Phantom connected. Keys are stored as Supabase secrets, never in the browser. Run these commands once:",
+  aboutFeeH: "Fee",
+  aboutFee: "Swaply adds a 0.5% fee on Solana swaps. Jupiter keeps 20% of that fee, so about 0.4% is the owner's.",
+  aboutGuardH: "Limits and guards",
+  aboutGuard1: "Live swaps are capped at $25 each while testing, and $5 for custom or pump.fun tokens. Custom token previews are capped at $50.",
+  aboutGuard2: "Nothing is signed if the executable price is more than 1% worse than the preview (3% for custom tokens), or if the fee is higher than expected.",
+  aboutGuard3: "Live mode is off by default, and a real wallet must be connected before any swap.",
+  aboutStatusH: "Current status",
+  aboutStatus: "Prices are indicative values from GeckoTerminal (sample values if it can't be reached). Executable quotes and signing exist only for Solana through Jupiter. Other networks are preview only. Each swap stays on one network; cross-chain swaps are not supported. Do not publish this version: API keys in the browser can be read by anyone with access to the page, so use your own backend first. This has been mock tested, not yet tested with a real wallet.",
+  aboutDisclaimer: "Swaply is not financial advice. Crypto can lose value and mistakes on-chain are usually irreversible. Verify token addresses and start with small amounts.",
+  aboutNetH: "Networks",
+  aboutNet: "Solana: SOL, WSOL, USDC, USDT, with real swaps through Jupiter. Base: ETH, WETH, USDC, DAI. Ethereum: ETH, WETH, USDC, USDT, DAI. BNB Chain: BNB, WBNB, USDT, USDC. Robinhood Chain: native ETH. Everything except Solana is preview only.",
+  aboutWalletH: "Wallet",
+  aboutWallet: "Swaply connects to the wallet in your browser (MetaMask for EVM, Phantom for Solana). On a phone browser, use the link to open this page inside your wallet app. There is no demo mode.",
+  aboutLogH: "What changed",
+  aboutLog1: "Fixed the chat: clear error messages and better parsing of commands.",
+  aboutLog2: "Added the Jupiter fee (0.5%) and real swaps on Solana with safety limits.",
+  aboutLog3: "Chat-only interface: the Swap form was removed.",
+  aboutLog4: "The chat now talks to a server function (/api/chat).",
+  aboutLog5: "Added links to open the page in Phantom or MetaMask.",
+  aboutLog6: "Removed the demo wallet.",
+  aboutLog7: "Added pump.fun tokens on Solana (graduated tokens through Jupiter, with a $5 cap)."
+};
+const cache = { english: EN };
+let langName = "English";
+let S = EN;
+
+const t = (k, v = {}) => (S[k] || EN[k] || k).replace(/\{(\w+)\}/g, (_, n) => v[n] ?? "");
+
+/* ============ State + helpers ============ */
+const $ = id => document.getElementById(id);
+const log = $("log"), inp = $("inp"), sendBtn = $("send"), walletBtn = $("wallet");
+const fromSel = $("fromSel"), toSel = $("toSel"), fromAddr = $("fromAddr"), toAddr = $("toAddr");
+const amt = $("amt"), recv = $("recv"), slot = $("slot"), formMsg = $("formMsg"), previewBtn = $("previewBtn");
+let chain = "base";
+const accounts = { evm:null, solana:null };
+const history = [];
+const wtype = () => CHAINS[chain].type === "solana" ? "solana" : "evm";
+const CUSTOM = "__custom";
+
+function add(text, cls){
+  const d = document.createElement("div");
+  d.className = "msg " + cls;
+  d.textContent = text;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+  return d;
+}
+const short = a => a.slice(0,6) + "…" + a.slice(-4);
+const fmt = (n, max=6) => Number(n).toLocaleString(undefined, { maximumFractionDigits:max });
+const fmtS = n => Number(n).toLocaleString(undefined, { maximumSignificantDigits:6 });
+const esc = x => String(x).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const norm = (ch, a) => CHAINS[ch].type === "solana" ? a : a.toLowerCase();
+const validAddr = (ch, a) => CHAINS[ch].type === "solana" ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a) : /^0x[a-fA-F0-9]{40}$/.test(a);
+const listTokens = ch => Object.keys(TOKENS[ch]).join(", ");
+function iconEl(sym){
+  const s = document.createElement("span");
+  s.className = "ico"; s.textContent = String(sym).slice(0, 3).toUpperCase();
+  let h = 0; for (const c of String(sym)) h = (h * 31 + c.charCodeAt(0)) % 360;
+  s.style.background = `hsl(${(h % 80) + 110} 85% 62%)`;
+  return s;
+}
+function timeAgo(ts){
+  const m = Math.floor((Date.now() - ts) / 60000);
+  return m < 1 ? t("timeNow") : m < 60 ? t("timeMin", { n:m }) : t("timeHour", { n:Math.floor(m / 60) });
+}
+
+/* ============ Chains, wallet label, tabs ============ */
+function updateWallet(){
+  const acct = accounts[wtype()];
+  walletBtn.classList.toggle("on", !!acct);
+  $("walletTxt").textContent = !acct ? t("connect") : short(acct);
+}
+function renderChains(){
+  const sel = $("chainSel");
+  if (!sel.options.length) Object.keys(CHAINS).forEach(k => sel.add(new Option(CHAINS[k].name, k)));
+  sel.value = chain;
+  const ul = $("netList"); ul.textContent = "";
+  Object.keys(CHAINS).forEach(k => {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.className = "net";
+    const nm = document.createElement("span"); nm.className = "nm";
+    nm.textContent = CHAINS[k].name;
+    b.appendChild(iconEl(CHAINS[k].name.slice(0, 2)));
+    b.appendChild(nm);
+    if (k === chain){ const st = document.createElement("span"); st.className = "st"; st.textContent = t("selected"); b.appendChild(st); }
+    b.onclick = () => setChain(k, false);
+    li.appendChild(b); ul.appendChild(li);
+  });
+}
+function setChain(key, announce){
+  if (!CHAINS[key] || key === chain) return;
+  chain = key; renderChains(); updateWallet(); resetForm();
+  if (announce) add(t("switchedChain", { chain: CHAINS[key].name }), "bot");
+}
+$("chainSel").onchange = e => setChain(e.target.value, false);
+
+function switchTab(name){
+  const swap = name === "swap";
+  $("paneSwap").hidden = !swap; $("paneChat").hidden = swap;
+  $("tabSwap").setAttribute("aria-selected", String(swap));
+  $("tabChat").setAttribute("aria-selected", String(!swap));
+  if (!swap) setTimeout(() => inp.focus(), 0);
+}
+$("tabSwap").onclick = () => switchTab("swap");
+$("tabChat").onclick = () => switchTab("chat");
+const isChat = () => !$("paneChat").hidden;
+
+/* ============ Swap form ============ */
+function fillSel(sel, keepValue){
+  const prev = keepValue ? sel.value : null;
+  sel.textContent = "";
+  Object.keys(TOKENS[chain]).forEach(k => sel.add(new Option(k, k)));
+  sel.add(new Option(t("customAddr"), CUSTOM));
+  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+function syncAddrBoxes(){
+  fromAddr.hidden = fromSel.value !== CUSTOM;
+  toAddr.hidden = toSel.value !== CUSTOM;
+}
+function resetForm(){
+  fillSel(fromSel, false); fillSel(toSel, false);
+  const keys = Object.keys(TOKENS[chain]);
+  fromSel.value = keys.includes("USDC") ? "USDC" : keys[0];
+  toSel.value = keys.find(k => k !== fromSel.value) || CUSTOM;
+  fromAddr.value = ""; toAddr.value = "";
+  syncAddrBoxes(); clearPreview(); updateEstimate();
+}
+function clearPreview(){ slot.textContent = ""; formMsg.textContent = ""; formMsg.className = "fmsg"; }
+function formSay(text, isErr){ formMsg.textContent = text; formMsg.className = "fmsg" + (isErr ? " err" : ""); }
+
+let estTimer = null, estId = 0;
+function scheduleEstimate(){ clearTimeout(estTimer); estTimer = setTimeout(updateEstimate, 350); }
+async function updateEstimate(){
+  const id = ++estId;
+  const amount = Number(amt.value.replace(/,/g, ""));
+  if (!(amount > 0) || fromSel.value === CUSTOM || toSel.value === CUSTOM || fromSel.value === toSel.value){ recv.textContent = "—"; return; }
+  const [f, tk] = await Promise.all([builtIn(chain, fromSel.value), builtIn(chain, toSel.value)]);
+  if (id !== estId) return;
+  recv.textContent = "≈ " + fmtS(getQuote(f, tk, amount).out) + " " + tk.symbol;
+}
+[fromSel, toSel].forEach(sel => sel.addEventListener("change", () => { syncAddrBoxes(); clearPreview(); scheduleEstimate(); }));
+[fromAddr, toAddr].forEach(el => el.addEventListener("input", clearPreview));
+amt.addEventListener("input", () => { clearPreview(); scheduleEstimate(); });
+$("flip").onclick = () => {
+  [fromSel.value, toSel.value] = [toSel.value, fromSel.value];
+  [fromAddr.value, toAddr.value] = [toAddr.value, fromAddr.value];
+  syncAddrBoxes(); clearPreview(); scheduleEstimate();
+};
+previewBtn.onclick = async () => {
+  previewBtn.disabled = true; clearPreview(); formSay(t("checking"), false);
+  try{
+    const fc = fromSel.value === CUSTOM, tc = toSel.value === CUSTOM;
+    const res = await runSwap({
+      fromSym: fc ? "TOKEN_A" : fromSel.value, toSym: tc ? "TOKEN_B" : toSel.value,
+      rawAddrs: [fc ? fromAddr.value.trim() : "", tc ? toAddr.value.trim() : ""],
+      amount: Number(amt.value.replace(/,/g, ""))
+    });
+    if (res.error){ formSay(res.error, true); return; }
+    formSay("", false);
+    showPreview(res, slot, formSay);
+  }catch(e){ formSay(t("error", { msg: e.message }), true); }
+  finally{ previewBtn.disabled = false; }
+};
+
+/* ============ History + rail ============ */
+function pushHistory(res){
+  history.unshift({ from:res.from.symbol, to:res.to.symbol, amount:res.amount, ch:res.ch, ts:Date.now() });
+  if (history.length > 20) history.pop();
+  renderRecent();
+  authReady.then(() => sb.from("swap_history").insert({ from_sym:res.from.symbol, to_sym:res.to.symbol, amount:res.amount, ch:res.ch })).catch(() => {});
+}
+async function loadHistory(){
+  try{
+    await authReady;
+    const { data } = await sb.from("swap_history").select("from_sym,to_sym,amount,ch,created_at").order("created_at", { ascending:false }).limit(20);
+    if (!data) return;
+    history.splice(0, history.length, ...data.filter(r => CHAINS[r.ch]).map(r => ({ from:r.from_sym, to:r.to_sym, amount:Number(r.amount), ch:r.ch, ts:Date.parse(r.created_at) })));
+    renderRecent();
+  }catch(_){}
+}
+function histRow(h){
+  const li = document.createElement("li");
+  const d = document.createElement("div"); d.className = "hist";
+  d.appendChild(iconEl(h.from));
+  const nm = document.createElement("div"); nm.className = "nm";
+  nm.textContent = h.from + " → " + h.to;
+  const sm = document.createElement("small"); sm.textContent = fmtS(h.amount) + " " + h.from + " · " + CHAINS[h.ch].name;
+  nm.appendChild(sm); d.appendChild(nm);
+  const tm = document.createElement("div"); tm.className = "tm"; tm.textContent = timeAgo(h.ts);
+  d.appendChild(tm); li.appendChild(d);
+  return li;
+}
+function renderList(ul, items){
+  ul.textContent = "";
+  if (!items.length){ const li = document.createElement("li"); const p = document.createElement("p"); p.className = "empty"; p.textContent = t("noHistory"); li.appendChild(p); ul.appendChild(li); return; }
+  items.forEach(h => ul.appendChild(histRow(h)));
+}
+function renderRecent(){ renderList($("recent"), history.slice(0, 4)); if (sheetKind === "history") renderSheet(); }
+
+/* ============ Sheet (About / History) ============ */
+let sheetKind = null;
+function renderSheet(){
+  const el = $("sheetBody"); el.textContent = "";
+  const h = (tag, key) => { const n = document.createElement(tag); n.textContent = t(key); el.appendChild(n); };
+  const list = (tag, keys) => {
+    const l = document.createElement(tag);
+    keys.forEach(k => { const li = document.createElement("li"); li.textContent = t(k); l.appendChild(li); });
+    el.appendChild(l);
+  };
+  if (sheetKind === "login"){
+    loginPanel(el);
+  } else if (sheetKind === "history"){
+    h("h2", "historyTitle");
+    const ul = document.createElement("ul"); ul.className = "list"; el.appendChild(ul);
+    renderList(ul, history);
+  } else {
+    h("h2","aboutTitle");
+    h("h3","aboutWhatH"); h("p","aboutWhat");
+    h("h3","aboutWhyH"); h("p","aboutWhy");
+    h("h3","aboutHowH"); list("ol",["aboutHow1","aboutHow2","aboutHow3","aboutHow4","aboutHow5"]);
+    h("h3","aboutUseH"); list("ul",["aboutUse1","aboutUse2","aboutUse3","aboutUse4","aboutUse5"]);
+    h("h3","aboutNetH"); h("p","aboutNet");
+    h("h3","aboutWalletH"); h("p","aboutWallet");
+    h("h3","aboutLiveH"); h("p","aboutLive");
+    const pre = document.createElement("pre");
+    pre.style.cssText = "white-space:pre-wrap;word-break:break-all;background:#08140F;border:1px solid var(--line2);border-radius:10px;padding:10px;font-size:12px;color:var(--neon)";
+    pre.textContent = 'supabase secrets set ANTHROPIC_API_KEY=YOUR_KEY\nsupabase secrets set JUPITER_API_KEY=YOUR_JUPITER_KEY JUPITER_REF=YOUR_REFERRAL_ACCOUNT\nsupabase secrets set SWAPLY_LIVE=1';
+    el.appendChild(pre);
+    h("h3","aboutFeeH"); h("p","aboutFee");
+    h("h3","aboutGuardH"); list("ul",["aboutGuard1","aboutGuard2","aboutGuard3"]);
+    h("h3","aboutSafeH"); list("ul",["aboutSafe1","aboutSafe2","aboutSafe3","aboutSafe4"]);
+    h("h3","aboutStatusH"); h("p","aboutStatus");
+    h("h3","aboutLogH"); list("ul",["aboutLog1","aboutLog2","aboutLog3","aboutLog4","aboutLog5","aboutLog6","aboutLog7"]);
+    h("p","aboutDisclaimer");
+  }
+}
+function updateAcct(){
+  const b = $("acct"); if (!b) return;
+  b.textContent = isGuest() ? t("login") : authUser.email.split("@")[0];
+}
+function loginPanel(el){
+  const h = (tag, txt) => { const n = document.createElement(tag); n.textContent = txt; el.appendChild(n); return n; };
+  h("h2", t("loginTitle"));
+  if (!isGuest()){
+    h("p", t("signedAs", { email: authUser.email }));
+    const out = h("button", t("logout")); out.className = "cta";
+    out.onclick = async () => { await sb.auth.signOut(); await sb.auth.signInAnonymously().catch(() => {}); closeSheet(); };
+    return;
+  }
+  const field = (type, ph, ac) => { const i = document.createElement("input"); i.type = type; i.className = "in"; i.placeholder = ph; i.autocomplete = ac; i.style.marginTop = "10px"; el.appendChild(i); return i; };
+  const em = field("email", t("email"), "email"), pw = field("password", t("password"), "current-password");
+  const row = document.createElement("div"); row.className = "row"; row.style.marginTop = "12px"; el.appendChild(row);
+  const bIn = document.createElement("button"); bIn.className = "ok"; bIn.textContent = t("signIn");
+  const bUp = document.createElement("button"); bUp.className = "no"; bUp.textContent = t("signUp");
+  row.append(bIn, bUp);
+  const msg = h("div", ""); msg.className = "fmsg";
+  const run = async fn => {
+    msg.className = "fmsg"; msg.textContent = "…"; bIn.disabled = bUp.disabled = true;
+    try{ const { error } = await fn(); if (error) throw error; return true; }
+    catch(e){ msg.className = "fmsg err"; msg.textContent = t("authErr", { msg: e.message }); return false; }
+    finally{ bIn.disabled = bUp.disabled = false; }
+  };
+  const creds = () => ({ email: em.value.trim(), password: pw.value });
+  bIn.onclick = async () => { if (await run(() => sb.auth.signInWithPassword(creds()))) closeSheet(); };
+  bUp.onclick = async () => {
+    // a guest session is upgraded in place, so its history is kept
+    const guest = authUser && authUser.is_anonymous;
+    if (await run(() => guest ? sb.auth.updateUser(creds()) : sb.auth.signUp(creds()))) msg.textContent = t("authCheck");
+  };
+}
+function openSheet(kind){
+  sheetKind = kind; renderSheet();
+  $("sheetWrap").hidden = false;
+  $("sheetClose").focus({ preventScroll:true });
+  $("sheetWrap").querySelector(".sheet").scrollTop = 0;
+}
+function closeSheet(){ sheetKind = null; $("sheetWrap").hidden = true; }
+$("acct").onclick = () => openSheet("login");
+$("navAbout").onclick = () => openSheet("about");
+$("navHistory").onclick = () => openSheet("history");
+$("navSwap").onclick = () => { closeSheet(); switchTab("chat"); window.scrollTo({ top:0, behavior:"smooth" }); };
+$("sheetClose").onclick = closeSheet;
+$("sheetWrap").addEventListener("click", e => { if (e.target === $("sheetWrap")) closeSheet(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
+
+function applyStatic(){
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+  inp.placeholder = t("placeholder");
+  fromAddr.placeholder = toAddr.placeholder = t("addrPlaceholder");
+  sendBtn.textContent = t("send");
+  previewBtn.textContent = t("previewBtn");
+  $("sheetClose").textContent = t("close");
+  fillSel(fromSel, true); fillSel(toSel, true); syncAddrBoxes();
+  renderChains(); renderRecent(); updateWallet(); updateAcct();
+  if (sheetKind) renderSheet();
+  const rtl = /arabic|hebrew|persian|farsi|urdu|pashto|sindhi|yiddish/i.test(langName);
+  document.documentElement.dir = rtl ? "rtl" : "ltr";
+}
+
+/* ============ LLM helper ============ */
+// Goes through the Supabase Edge Function "chat", which holds the Anthropic key.
+function extractJSON(raw){
+  const clean = raw.replace(/```json|```/g, "").trim();
+  try{ return JSON.parse(clean); }catch(_){}
+  const a = clean.indexOf("{"), b = clean.lastIndexOf("}");
+  if (a >= 0 && b > a) return JSON.parse(clean.slice(a, b + 1));
+  throw new Error("Could not read the reply");
+}
+async function callClaude(system, user){
+  await authReady;
+  const { data, error } = await sb.functions.invoke("chat", { body:{ system, user } });
+  if (error || !data || typeof data.text !== "string") throw new Error((data && data.error) || t("llmDown"));
+  return extractJSON(data.text);
+}
+
+/* ============ Language switching ============ */
+async function setLang(name){
+  const key = name.toLowerCase();
+  if (!cache[key]){
+    try{
+      const sys = `Translate the string values of the JSON object into ${name}. Keep keys unchanged. Keep {placeholders} like {msg} and tokens like USDC, ETH, BNB, SOL, Base, Ethereum, Solana, MetaMask, Phantom, GeckoTerminal, GoPlus, Swaply, and "$" exactly as they are. Return ONLY the JSON object.`;
+      const keys = Object.keys(EN), chunks = [];
+      for (let i = 0; i < keys.length; i += 8) chunks.push(keys.slice(i, i + 8));
+      const parts = await Promise.all(chunks.map(ks =>
+        callClaude(sys, JSON.stringify(Object.fromEntries(ks.map(k => [k, EN[k]])))).catch(() => ({}))
+      ));
+      const tr = Object.assign({}, ...parts);
+      const ok = {};
+      for (const k in EN){
+        const need = (EN[k].match(/\{\w+\}/g) || []);
+        if (typeof tr[k] === "string" && need.every(p => tr[k].includes(p))) ok[k] = tr[k];
+      }
+      cache[key] = { ...EN, ...ok };
+    }catch(e){ cache[key] = EN; }
+  }
+  langName = name; S = cache[key];
+  applyStatic();
+}
+
+/* ============ Open in wallet app (mobile browsers have no injected wallet) ============ */
+// Phantom: documented "browse" deeplink. MetaMask: dapp universal link.
+function offerWalletApp(type){
+  if (!/^https?:$/.test(location.protocol) || /^(localhost|127\.|0\.0\.0\.0)/.test(location.hostname)) return;
+  const here = location.href.split("#")[0];
+  const sol = type === "solana";
+  const href = sol
+    ? "https://phantom.app/ul/browse/" + encodeURIComponent(here) + "?ref=" + encodeURIComponent(location.origin)
+    : "https://metamask.app.link/dapp/" + here.replace(/^https?:\/\//, "");
+  const a = document.createElement("a");
+  a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer";
+  a.className = "msg bot";
+  a.style.cssText = "color:var(--neon);font-weight:700;text-decoration:none;border-color:var(--line)";
+  a.textContent = t(sol ? "openInPhantom" : "openInMetaMask");
+  log.appendChild(a); log.scrollTop = log.scrollHeight;
+}
+
+/* ============ Wallet ============ */
+walletBtn.onclick = async () => {
+  const type = wtype(), name = CHAINS[chain].name;
+  const say = (txt, err) => isChat() ? add(txt, "bot" + (err ? " err" : "")) : formSay(txt, err);
+  if (type === "evm"){
+    if (!window.ethereum){
+      say(t("noWallet"), false); offerWalletApp("evm");
+      return;
+    }
+    try{
+      const accts = await window.ethereum.request({ method:"eth_requestAccounts" });
+      accounts.evm = accts[0]; updateWallet();
+      const id = String(await window.ethereum.request({ method:"eth_chainId" })).toLowerCase();
+      id !== CHAINS[chain].chainId ? say(t("wrongChain", { chain:name }), true) : say(t("connected", { chain:name }), false);
+    }catch(e){ say(t("connectFail", { msg: e.message || t("cancelledReq") }), true); }
+  } else {
+    const sol = window.phantom?.solana || (window.solana?.isPhantom ? window.solana : null);
+    if (!sol){
+      say(t("noPhantom"), false); offerWalletApp("solana");
+      return;
+    }
+    try{
+      const r = await sol.connect();
+      accounts.solana = r.publicKey.toString(); updateWallet();
+      say(t("connected", { chain:name }), false);
+    }catch(e){ say(t("connectFail", { msg: e.message || t("cancelledReq") }), true); }
+  }
+};
+
+/* ============ GeckoTerminal (public, keyless) ============ */
+const gtCache = {};
+async function gtGet(net, path){
+  const url = "https://api.geckoterminal.com/api/v2/networks/" + net + path;
+  const c = gtCache[url];
+  if (c && Date.now() - c.t < 60000) return c.d;
+  const r = await fetch(url);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error("GeckoTerminal " + r.status);
+  const d = await r.json();
+  gtCache[url] = { t: Date.now(), d };
+  return d;
+}
+async function builtIn(ch, k){
+  const def = TOKENS[ch][k];
+  const tok = { symbol:k, address:def.address, id: def.address === "native" ? "native:" + k : norm(ch, def.address),
+                custom:false, usd:SAMPLE_USD[k], live:false, risks:[] };
+  try{
+    const pr = def.price || { net: CHAINS[ch].gt, addr: def.address };
+    const d = await gtGet(pr.net, "/tokens/" + pr.addr);
+    const p = parseFloat(d?.data?.attributes?.price_usd);
+    if (p > 0){ tok.usd = p; tok.live = true; }
+  }catch(e){ /* keep sample price */ }
+  return tok;
+}
+
+/* ============ Security scan (GoPlus, public, keyless) ============ */
+const jsonCache = {};
+async function jsonGet(url){
+  const c = jsonCache[url];
+  if (c && Date.now() - c.t < 120000) return c.d;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  try{
+    const r = await fetch(url, { signal: ctl.signal });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    jsonCache[url] = { t: Date.now(), d };
+    return d;
+  } finally { clearTimeout(timer); }
+}
+async function securityScan(ch, addr){
+  try{
+    const c = CHAINS[ch];
+    const url = c.type === "solana"
+      ? "https://api.gopluslabs.io/api/v1/solana/token_security?contract_addresses=" + encodeURIComponent(addr)
+      : "https://api.gopluslabs.io/api/v1/token_security/" + c.gp + "?contract_addresses=" + addr;
+    const d = await jsonGet(url);
+    const r = d?.result?.[addr];
+    return r && typeof r === "object" && Object.keys(r).length ? r : null;
+  }catch(e){ return null; }
+}
+function evalSecurity(ch, r){
+  const risks = [];
+  const is1 = k => r[k] === "1" || r[k] === 1;
+  if (CHAINS[ch].type === "solana"){
+    if (r.mintable === undefined && r.freezable === undefined) return null;
+    if (is1("non_transferable")) return { block:"blockCantTrade", vars:{}, risks };
+    if (String(r.mintable?.status) === "1") risks.push(["riskSolMint", {}]);
+    if (String(r.freezable?.status) === "1") risks.push(["riskSolFreeze", {}]);
+    return { block:null, vars:{}, risks };
+  }
+  if (is1("is_honeypot") || is1("cannot_sell_all") || is1("cannot_buy")) return { block:"blockCantTrade", vars:{}, risks };
+  const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+  const tax = Math.max(num(r.buy_tax), num(r.sell_tax));
+  if (tax > MAX_TAX_BLOCK) return { block:"blockTax", vars:{ pct: fmt(tax * 100, 1) }, risks };
+  if (tax >= TAX_WARN) risks.push(["riskTax", { pct: fmt(tax * 100, 1) }]);
+  if (is1("is_mintable")) risks.push(["riskMint", {}]);
+  if (is1("hidden_owner") || is1("can_take_back_ownership")) risks.push(["riskOwner", {}]);
+  if (is1("is_blacklisted") || is1("transfer_pausable")) risks.push(["riskBlacklist", {}]);
+  if (is1("slippage_modifiable") || is1("personal_slippage_modifiable")) risks.push(["riskSlip", {}]);
+  if (is1("is_proxy")) risks.push(["riskProxy", {}]);
+  if (r.is_open_source === "0" || r.is_open_source === 0) risks.push(["riskClosed", {}]);
+  return { block:null, vars:{}, risks };
+}
+
+async function loadCustom(ch, addr){
+  const known = Object.keys(TOKENS[ch]).find(k => TOKENS[ch][k].address !== "native" && norm(ch, TOKENS[ch][k].address) === addr);
+  if (known) return builtIn(ch, known);
+  const net = CHAINS[ch].gt;
+  let tk, pools, raw;
+  try{
+    [tk, pools, raw] = await Promise.all([
+      gtGet(net, "/tokens/" + addr),
+      gtGet(net, "/tokens/" + addr + "/pools?page=1"),
+      securityScan(ch, addr)
+    ]);
+  }catch(e){ return { error: t("tokenLookupFail") }; }
+  const a = tk?.data?.attributes;
+  const price = parseFloat(a?.price_usd);
+  if (!a || !(price > 0)) return { error: t("tokenNotFound") };
+  let liq = 0, created = null;
+  (pools?.data || []).forEach(p => {
+    const r = parseFloat(p.attributes?.reserve_in_usd) || 0;
+    if (r > liq){ liq = r; created = p.attributes?.pool_created_at || null; }
+  });
+  const pump = ch === "solana" && /pump$/.test(addr);   // pump.fun mints end with "pump"
+  if (liq < BLOCK_LIQ_USD) return { error: t("blockLiq", { n: fmt(liq, 0), min: fmt(BLOCK_LIQ_USD, 0) }) + (pump ? " " + t("pumpNoRoute", { url: "https://pump.fun/coin/" + addr }) : "") };
+  const ev = raw ? evalSecurity(ch, raw) : null;
+  if (ev?.block) return { error: t(ev.block, ev.vars) };
+
+  const ageDays = created ? (Date.now() - new Date(created).getTime()) / 86400000 : null;
+  const vol = parseFloat(a.volume_usd?.h24) || 0;
+  const symbol = String(a.symbol || "?").slice(0, 12);
+  const risks = [];
+  if (pump) risks.push(["riskPump", {}]);
+  if (liq < 10000) risks.push(["riskLowLiq", { n: fmt(liq, 0) }]);
+  else if (liq < 50000) risks.push(["riskMedLiq", { n: fmt(liq, 0) }]);
+  if (ageDays !== null && ageDays < 7) risks.push(["riskNewPool", { n: fmt(ageDays, 1) }]);
+  if (vol <= 0) risks.push(["riskNoVol", {}]);
+  const clash = Object.keys(TOKENS[ch]).find(k => k === symbol.toUpperCase());
+  if (clash) risks.push(["riskSymbol", { sym: clash }]);
+  if (ev) risks.push(...ev.risks);
+  else {
+    risks.push(["riskScanUnavailable", {}]);
+    if (ch === "solana") risks.push(["riskSolana", {}]);
+  }
+  if (ch === "robinhood") risks.push(["riskRobinhood", {}]);
+  risks.push(["riskScanLimit", {}]);
+  const dec = Number(a.decimals);
+  return { symbol, address: addr, id: addr, custom:true, usd:price, live:true, liq, ageDays, scanned: !!ev, risks, pump, decimals: Number.isInteger(dec) && dec >= 0 && dec <= 12 ? dec : null };
+}
+
+async function resolveToken(sym, rawAddrs, ch){
+  const m = /^TOKEN_([AB])$/i.exec(String(sym || "").trim());
+  if (m){
+    const raw = rawAddrs["AB".indexOf(m[1].toUpperCase())];
+    if (!raw || !validAddr(ch, raw)) return { error: t("addrWrongChain", { chain: CHAINS[ch].name }) };
+    return loadCustom(ch, norm(ch, raw));
+  }
+  const k = String(sym || "").toUpperCase();
+  return TOKENS[ch][k] ? builtIn(ch, k) : { error: t("badToken", { chain: CHAINS[ch].name, list: listTokens(ch) }) };
+}
+
+/* ============ Fast path: simple commands skip the LLM ============ */
+const CHAIN_WORDS = {
+  base:"base", ethereum:"ethereum", mainnet:"ethereum", "ethereum mainnet":"ethereum",
+  bnb:"bnb", bsc:"bnb", "bnb chain":"bnb", solana:"solana",
+  robinhood:"robinhood", "robinhood chain":"robinhood"
+};
+const FAST_FILLER = /\b(please|pls|paki|palitan|ipalit|i-?swap|swap|convert|exchange|trade|sell|ko|ng|na|ang|mo|naman|gusto|want|to|i|would|like|can|you|could)\b/gi;
+function fastParse(masked){
+  const known = new Set([...Object.values(TOKENS).flatMap(o => Object.keys(o)), "TOKEN_A", "TOKEN_B"]);
+  let txt = masked.toLowerCase().replace(/,(?=\d{3})/g, "");
+  let chainKey = null;
+  const cm = /\b(?:on|sa|in)\s+(ethereum mainnet|bnb chain|robinhood chain|base|ethereum|mainnet|bnb|bsc|solana|robinhood)\s*[.!]?\s*$/.exec(txt);
+  if (cm){ chainKey = CHAIN_WORDS[cm[1]]; txt = txt.slice(0, cm.index); }
+  // buy X with N Y  ->  from Y to X
+  let m = /\bbuy\s+([a-z_]{2,10})\s+with\s+(\d+(?:\.\d+)?)\s*([a-z_]{2,10})/.exec(txt);
+  let from, to, amount;
+  if (m){ to = m[1]; amount = Number(m[2]); from = m[3]; }
+  else{
+    m = /(\d+(?:\.\d+)?)\s*([a-z_]{2,10})\s*(?:to|for|into|sa|para|->|=>|→)\s*([a-z_]{2,10})\b/.exec(txt);
+    if (!m) return null;
+    amount = Number(m[1]); from = m[2]; to = m[3];
+    // reject if there is unexplained leftover text (let the LLM handle it)
+    const left = (txt.slice(0, m.index) + " " + txt.slice(m.index + m[0].length)).replace(FAST_FILLER, "").replace(/[^a-z0-9_]/g, "");
+    if (left) return null;
+  }
+  from = from.toUpperCase(); to = to.toUpperCase();
+  if (!known.has(from) || !known.has(to) || !isFinite(amount)) return null;
+  return { intent:"swap", lang:null, chain:chainKey, from, to, amount };
+}
+
+/* ============ LLM: intent parsing (any language) ============ */
+const SYSTEM = () => `You are the intent parser for a crypto swap assistant.
+Networks (use these exact ids): base, ethereum, bnb, solana, robinhood. The user currently has "${chain}" selected.
+Known tokens by network: ${JSON.stringify(Object.fromEntries(Object.entries(TOKENS).map(([c, o]) => [c, Object.keys(o)])))}.
+Users may also refer to custom tokens by the placeholders TOKEN_A and TOKEN_B (they stand for contract addresses). Use those placeholders exactly in "from"/"to".
+The user may write in ANY language. Detect it.
+Reply with ONLY a JSON object, no markdown, no extra text. Schema:
+{"lang":"English name of the user's language, e.g. Spanish, Filipino, Japanese","intent":"swap"|"chat","chain":"network id or null","from":"TOKEN","to":"TOKEN","amount":number,"reply":"short friendly message written in the user's language"}
+Rules:
+- Set "chain" only if the user names a network, otherwise null.
+- A swap happens on ONE network. If the user wants to move or swap between different networks (cross-chain), use "chat" and explain that this is not supported.
+- Token symbols stay in Latin letters (USDC, ETH...), even in other languages.
+- Use "swap" only if the user clearly wants to swap/convert/buy/sell and gave a token pair and a numeric amount.
+- If anything is missing or unclear, use "chat" and ask for the missing piece in "reply".
+- Never invent amounts or tokens. Never give financial advice.`;
+
+/* ============ Validation (code decides, not the LLM) ============ */
+function validate(from, to, amount){
+  if (from.id === to.id) return t("sameToken");
+  if (!isFinite(amount) || amount <= 0) return t("badAmount");
+  const custom = from.custom || to.custom;
+  const cap = custom ? CUSTOM_MAX_USD : MAX_SWAP_USD;
+  if (amount * from.usd > cap) return t(custom ? "customCap" : "overCap", { cap });
+  return null;
+}
+function getQuote(from, to, amount){
+  const usd = amount * from.usd;
+  const fee = usd * FEE_BPS / 10000;
+  return { out:(usd - fee) / to.usd, rate:from.usd / to.usd, feeUsd:fee };
+}
+
+/* ============ Jupiter quote (Solana, built-in tokens, quote only) ============ */
+// Goes through the Supabase Edge Function "jupiter" (holds the Jupiter key + referral account).
+// No "taker" is sent, so Jupiter returns a price only. Nothing can be signed or executed here.
+const decOf = tk => tk.custom ? tk.decimals : JUP_DEC[tk.symbol];
+async function jupiterQuote(from, to, amount){
+  await cfgReady;
+  if (chain !== "solana" || !cfg.jup) return null;
+  const dIn = decOf(from), dOut = decOf(to);
+  if (!Number.isInteger(dIn) || !Number.isInteger(dOut)) return null;
+  const mint = tk => tk.address === "native" ? WSOL : tk.address;
+  const params = { inputMint: mint(from), outputMint: mint(to), amount: String(Math.round(amount * 10 ** dIn)) };
+  try{
+    const r = await jup("order", { params });
+    if (r.status < 200 || r.status >= 300) return null;
+    const o = r.body;
+    const out = Number(o.outAmount) / 10 ** dOut;
+    if (!(out > 0)) return null;
+    const bps = Number(o.feeBps) || 0;
+    return { out, rate: out / amount, feeUsd: amount * from.usd * bps / 10000, feeBps: bps, live: true };
+  }catch(_){ return null; }
+}
+
+/* ============ REAL swap: Jupiter /order (with taker) -> wallet signs -> /execute ============ */
+const LIVE_MAX_USD = 25;        // hard cap per live swap while you test
+const LIVE_CUSTOM_MAX_USD = 5;  // custom / pump.fun tokens: much smaller cap
+const MAX_DEVIATION = 0.01;     // abort if the executable quote is >1% worse than the preview
+const MAX_DEVIATION_CUSTOM = 0.03;  // volatile new tokens: 3%
+const liveReady = res => res.ch === "solana" && !!accounts.solana
+  && cfg.live && cfg.jup
+  && Number.isInteger(decOf(res.from)) && Number.isInteger(decOf(res.to)) && res.q.live === true;
+
+function loadWeb3(){
+  if (window.solanaWeb3) return Promise.resolve(window.solanaWeb3);
+  return new Promise((ok, no) => {
+    const sc = document.createElement("script");
+    sc.src = "https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.0/lib/index.iife.min.js";
+    sc.onload = () => window.solanaWeb3 ? ok(window.solanaWeb3) : no(new Error("web3.js failed to load"));
+    sc.onerror = () => no(new Error("web3.js could not be loaded"));
+    document.head.appendChild(sc);
+  });
+}
+const b64ToBytes = b => Uint8Array.from(atob(b), c => c.charCodeAt(0));
+const bytesToB64 = u => { let s = ""; u.forEach(x => s += String.fromCharCode(x)); return btoa(s); };
+
+async function executeLive(res, say){
+  const { from, to, amount, q } = res;
+  const usd = amount * from.usd;
+  const isCustom = !!(from.custom || to.custom);
+  const cap = isCustom ? LIVE_CUSTOM_MAX_USD : LIVE_MAX_USD;
+  if (usd > cap){ say(t("execMax", { cap }), true); return; }
+  const sol = window.phantom?.solana || (window.solana?.isPhantom ? window.solana : null);
+  if (!sol){ say(t("noPhantom"), true); return; }
+  const mint = tk => tk.address === "native" ? WSOL : tk.address;
+  const params = {
+    inputMint: mint(from), outputMint: mint(to),
+    amount: String(Math.round(amount * 10 ** decOf(from))),
+    taker: accounts.solana
+  };
+  try{
+    const r = await jup("order", { params });
+    const o = r.body || {};
+    if (r.status < 200 || r.status >= 300) throw new Error(o.error || o.message || ("HTTP " + r.status));
+    if (!o.transaction) throw new Error(o.errorMessage || "no transaction returned");
+    // Safety checks BEFORE anything is signed
+    const out = Number(o.outAmount) / 10 ** decOf(to);
+    if (!(out >= q.out * (1 - (isCustom ? MAX_DEVIATION_CUSTOM : MAX_DEVIATION)))){ say(t("execStale"), true); return; }
+    if ((Number(o.feeBps) || 0) > FEE_BPS + 25){ say(t("execFee"), true); return; }
+
+    const web3 = await loadWeb3();
+    const tx = web3.VersionedTransaction.deserialize(b64ToBytes(o.transaction));
+    say(t("execSigning"), false);
+    const signed = await sol.signTransaction(tx);
+    say(t("execSending"), false);
+    const er = await jup("execute", { signedTransaction: bytesToB64(signed.serialize()), requestId: o.requestId });
+    const ex = er.body || {};
+    if (ex.status === "Success" && ex.signature){
+      say(t("execOk") + " https://solscan.io/tx/" + ex.signature, false);
+    } else {
+      say(t("execFail", { msg: ex.error || ("code " + ex.code) }), true);
+    }
+  }catch(e){
+    say(t("execFail", { msg: e.message || "cancelled" }), true);
+  }
+}
+
+/* One pipeline for both the form and the chat */
+async function runSwap({ fromSym, toSym, rawAddrs, amount }){
+  const ch = chain;
+  const [from, to] = await Promise.all([resolveToken(fromSym, rawAddrs, ch), resolveToken(toSym, rawAddrs, ch)]);
+  const bad = from.error || to.error;
+  if (bad) return { error: bad };
+  const problem = validate(from, to, amount);
+  if (problem) return { error: problem };
+  const swapUsd = amount * from.usd;
+  [from, to].filter(x => x.custom && x.liq > 0).forEach(x => {
+    const pct = swapUsd / x.liq * 100;
+    if (pct >= 2) x.risks.unshift(["riskImpact", { pct: fmt(pct, 1) }]);
+  });
+  const q = (await jupiterQuote(from, to, amount)) || getQuote(from, to, amount);
+  return { ch, from, to, amount, q };
+}
+
+/* ============ Preview card ============ */
+function showPreview(res, target, say){
+  const { ch, from, to, amount, q } = res;
+  const minOut = q.out * (1 - DEFAULT_SLIPPAGE / 100);
+  const custom = from.custom || to.custom;
+  const acct = accounts[CHAINS[ch].type === "solana" ? "solana" : "evm"];
+  const addr = tk => tk.address === "native" ? esc(t("native")) : esc(tk.custom ? tk.address : short(tk.address));
+  const risks = [...from.risks, ...to.risks];
+  const warn = liveReady(res) ? t("execWarn") : ((from.live && to.live) ? t("liveWarn") : t("sampleWarn"));
+  const customs = [from, to].filter(x => x.custom);
+  const liqRows = customs.map(x => `
+      <dt>${esc(x.symbol)} · ${t("liquidity")}</dt><dd>$${fmt(x.liq, 0)}</dd>
+      <dt>${esc(x.symbol)} · ${t("poolAge")}</dt><dd>${x.ageDays === null ? "?" : t("days", { n: fmt(x.ageDays, 1) })}</dd>
+      <dt>${esc(x.symbol)} · ${t("scanLabel")}</dt><dd>${x.scanned ? t("scanOk") : t("scanNone")}</dd>`).join("");
+  const links = customs.map(x =>
+    `<a href="${CHAINS[ch].explorer}${encodeURIComponent(x.address)}" target="_blank" rel="noopener noreferrer">${esc(x.symbol)}: ${t("viewExplorer")}</a>`).join("");
+  const card = document.createElement("div");
+  card.className = "preview";
+  card.innerHTML = `
+    <h2>${t("review")}</h2>
+    <div class="sell"><span class="sub">${t("youSell")}</span><span class="big">${fmtS(amount)} ${esc(from.symbol)}</span></div>
+    <div class="arrow">↓</div>
+    <div class="buy"><span class="sub">${t("youReceive")}</span><span class="big">${fmtS(q.out)} ${esc(to.symbol)}</span></div>
+    <dl>
+      <dt>${t("rate")}</dt><dd>1 ${esc(from.symbol)} = ${fmtS(q.rate)} ${esc(to.symbol)}</dd>
+      <dt>${t("fee")}</dt><dd>~$${fmt(q.feeUsd, 2)}</dd>
+      <dt>${t("slippage")}</dt><dd>${DEFAULT_SLIPPAGE}% (${t("min")} ${fmtS(minOut)} ${esc(to.symbol)})</dd>
+      <dt>${t("network")}</dt><dd>${esc(CHAINS[ch].name)}</dd>
+      <dt>${t("recipient")}</dt><dd>${acct ? esc(short(acct)) : t("notConnected")}</dd>
+      <dt>${esc(t("contract", { token: from.symbol }))}</dt><dd>${addr(from)}</dd>
+      <dt>${esc(t("contract", { token: to.symbol }))}</dt><dd>${addr(to)}</dd>${liqRows}
+    </dl>
+    ${custom ? `<div class="warn risk"><strong>${t("riskTitle")}</strong><ul>${risks.map(([k, v]) => `<li>${esc(t(k, v))}</li>`).join("")}</ul></div>
+    <div class="links">${links}</div>
+    <label class="ack"><input type="checkbox" class="ackbox"><span>${t("riskAck")}</span></label>` : ""}
+    <div class="warn">${warn}</div>
+    <div class="row">
+      <button class="no">${t("cancel")}</button>
+      <button class="ok">${t("confirm")}</button>
+    </div>`;
+  const [cancel, ok] = card.querySelectorAll("button");
+  const box = card.querySelector(".ackbox");
+  if (box){ ok.disabled = true; box.onchange = () => { ok.disabled = !box.checked; }; }
+  cancel.onclick = () => { card.classList.add("done"); say(t("cancelled"), false); };
+  ok.onclick = () => {
+    if (!acct){ say(t("connectFirst"), true); return; }
+    if (ch !== "solana" || !liveReady(res)){
+      card.classList.add("done");
+      const pk = [from, to].find(x => x.pump);
+      say(pk ? t("pumpNoRoute", { url: "https://pump.fun/coin/" + pk.address }) : (ch === "solana" ? t("execNeed") : t("previewReady")), false);
+      return;
+    }
+    card.classList.add("done");
+    executeLive(res, say);
+  };
+  if (target === slot) target.textContent = "";
+  target.appendChild(card);
+  if (target === log) log.scrollTop = log.scrollHeight;
+  pushHistory(res);
+}
+
+/* ============ Chat flow ============ */
+const sayChat = (txt, err) => add(txt, "bot" + (err ? " err" : ""));
+async function handle(){
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = ""; add(text, "me");
+  sendBtn.disabled = true;
+  const wait = add("…", "bot");
+  try{
+    // Contract addresses never go to the LLM; it only sees TOKEN_A / TOKEN_B placeholders.
+    const found = [...(text.match(/0x[a-fA-F0-9]{40}/g) || []), ...(text.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g) || [])];
+    const addrs = [...new Set(found)].slice(0, 2);
+    let masked = text;
+    addrs.forEach((a, i) => { masked = masked.split(a).join("TOKEN_" + "AB"[i]); });
+
+    const known = new Set([...Object.values(TOKENS).flatMap(o => Object.keys(o))]);
+    const na = /\b(?:swap|convert|exchange|trade|sell)\s+([a-z_]{2,10})\s+(?:to|for|into|sa)\s+([a-z_]{2,10})\b/i.exec(masked);
+    if (!fastParse(masked) && na && known.has(na[1].toUpperCase()) && known.has(na[2].toUpperCase()) && !/\d/.test(masked)){
+      wait.remove();
+      add(t("askAmount", { from: na[1].toUpperCase(), to: na[2].toUpperCase() }), "bot");
+      return;
+    }
+    const intent = fastParse(masked) || await callClaude(SYSTEM(), masked);
+    if (intent.lang && intent.lang.toLowerCase() !== langName.toLowerCase()) await setLang(intent.lang).catch(() => {});
+    if (intent.intent !== "swap"){ wait.remove(); add(intent.reply || t("askSwap"), "bot"); return; }
+
+    if (!intent.from || !intent.to || !isFinite(Number(intent.amount))){ wait.remove(); add(intent.reply || t("askSwap"), "bot"); return; }
+    if (CHAINS[intent.chain]) setChain(intent.chain, true);
+    wait.textContent = t("checking");
+    const res = await runSwap({ fromSym:intent.from, toSym:intent.to, rawAddrs:addrs, amount:Number(intent.amount) });
+    wait.remove();
+    if (res.error){ add(res.error, "bot err"); return; }
+    if (intent.reply) add(intent.reply, "bot");
+    showPreview(res, log, sayChat);
+  }catch(e){
+    wait.remove();
+    add(t("error", { msg: e.message }), "bot err");
+  }finally{
+    sendBtn.disabled = false; inp.focus();
+  }
+}
+sendBtn.onclick = handle;
+inp.addEventListener("keydown", e => { if (e.key === "Enter") handle(); });
+
+/* ============ Init ============ */
+$("paneSwap").hidden = true; $("paneChat").hidden = false;
+$("tabSwap").setAttribute("aria-selected","false"); $("tabChat").setAttribute("aria-selected","true");
+resetForm();
+applyStatic();
+add(t("welcome"), "bot");
+loadHistory();
+</script>
+</body>
+</html>
